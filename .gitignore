@@ -1,0 +1,5 @@
+.worktrees/
+.superpowers/
+work/
+outputs/*.zip
+node_modules/
