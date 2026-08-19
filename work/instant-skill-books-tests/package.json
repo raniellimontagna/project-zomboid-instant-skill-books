@@ -1,0 +1,11 @@
+{
+  "name": "instant-skill-books-tests",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "fengari": "0.1.4"
+  }
+}
