@@ -14,6 +14,10 @@ const productionPath = path.resolve(
   __dirname,
   '../../../InstantSkillBooks/42/media/lua/shared/InstantSkillBooks/InstantSkillBooks.lua',
 );
+const metadataPath = path.resolve(
+  __dirname,
+  '../../../InstantSkillBooks/42/mod.info',
+);
 
 function loadProduction() {
   const state = lauxlib.luaL_newstate();
@@ -101,4 +105,25 @@ test('skill-book duration is shortened only for eligible books', () => {
     assert.equal(result.duration, expectedDuration, name);
     assert.equal(result.durationCalls, 1, `${name}: vanilla duration call count`);
   }
+});
+
+test('Build 42 package includes required metadata and shared entry point', () => {
+  assert.equal(fs.existsSync(metadataPath), true, '42/mod.info exists');
+  const metadata = Object.fromEntries(
+    fs
+      .readFileSync(metadataPath, 'utf8')
+      .split(/\r?\n/)
+      .filter((line) => line && !line.startsWith('#'))
+      .map((line) => {
+        const separator = line.indexOf('=');
+        assert.notEqual(separator, -1, `metadata line is key=value: ${line}`);
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }),
+  );
+
+  assert.equal(metadata.id, 'InstantSkillBooks');
+  assert.equal(metadata.pzversion, '42.20');
+  assert.equal(typeof metadata.name, 'string');
+  assert.notEqual(metadata.name.trim(), '');
+  assert.equal(fs.existsSync(productionPath), true, 'shared Lua entry point exists');
 });
