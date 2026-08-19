@@ -35,9 +35,18 @@ Instant Skill Book Reading is a Project Zomboid Build 42.20 multiplayer mod. Whe
 
 5. Restart the dedicated server after changing the mod list. Have clients restart the game or reload their local mod list if the mod does not appear immediately.
 
-## Workshop and distribution status
+## Steam Workshop
 
-No Workshop item ID exists yet. This package is distributed as a local folder only; copy that same folder to the server and all clients instead of using a Workshop subscription.
+- Workshop page: https://steamcommunity.com/sharedfiles/filedetails/?id=3786090811
+- Workshop ID: `3786090811`
+- Mod ID: `InstantSkillBooks`
+
+For a dedicated server, use:
+
+```ini
+WorkshopItems=3786090811
+Mods=InstantSkillBooks
+```
 
 ## Multiplayer acceptance checks
 
