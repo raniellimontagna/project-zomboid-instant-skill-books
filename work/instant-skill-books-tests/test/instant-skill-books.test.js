@@ -19,7 +19,7 @@ const metadataPath = path.resolve(
   '../../../InstantSkillBooks/42/mod.info',
 );
 
-function loadProduction() {
+function loadProduction({ server = false } = {}) {
   const state = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(state);
 
@@ -36,6 +36,9 @@ function loadProduction() {
         return 777
       end,
     }
+    diagnostics = {}
+    isServer = function() return ${server} end
+    print = function(message) table.insert(diagnostics, message) end
   `;
 
   const status = lauxlib.luaL_loadstring(state, to_luastring(script));
@@ -49,6 +52,41 @@ function loadProduction() {
   );
   assert.equal(lua.lua_pcall(state, 0, 0, 0), lua.LUA_OK);
   return state;
+}
+
+function evaluateEligibilityFailure(server) {
+  const state = loadProduction({ server });
+  const script = `
+    local item = {
+      getNumberOfPages = function()
+        error("skill-book metadata unavailable")
+      end,
+    }
+    local action = {
+      item = item,
+      character = {},
+      readingProgress = 25,
+    }
+    local duration = ISReadABook.getDuration(action)
+    return duration,
+      ISReadABook.durationCalls,
+      action.readingProgress,
+      #diagnostics,
+      diagnostics[1] == "[InstantSkillBooks] eligibility check failed"
+  `;
+
+  const status = lauxlib.luaL_loadstring(state, to_luastring(script));
+  assert.equal(status, lua.LUA_OK);
+  assert.equal(lua.lua_pcall(state, 0, 5, 0), lua.LUA_OK);
+  const result = {
+    duration: lua.lua_tointeger(state, -5),
+    durationCalls: lua.lua_tointeger(state, -4),
+    readingProgress: lua.lua_tointeger(state, -3),
+    diagnosticCount: lua.lua_tointeger(state, -2),
+    hasNamespacedDiagnostic: lua.lua_toboolean(state, -1),
+  };
+  lua.lua_pop(state, 5);
+  return result;
 }
 
 function evaluateCase(input) {
@@ -89,7 +127,7 @@ function evaluateCase(input) {
   return { duration, durationCalls };
 }
 
-test('skill-book duration is shortened only for eligible books', () => {
+test('duration wrapper shortens only eligible books and fails closed on eligibility API errors', () => {
   const cases = [
     ['eligible skill book', { hasItem: true, pages: 100, skill: 'Mechanics', level: 1, maxLevel: 3, perkLevel: 0, illiterate: false }, 1],
     ['ordinary literature', { hasItem: true, pages: 100, skill: null, level: 0, maxLevel: 0, perkLevel: 0, illiterate: false }, 777],
@@ -105,6 +143,19 @@ test('skill-book duration is shortened only for eligible books', () => {
     assert.equal(result.duration, expectedDuration, name);
     assert.equal(result.durationCalls, 1, `${name}: vanilla duration call count`);
   }
+
+  const serverResult = evaluateEligibilityFailure(true);
+  assert.equal(serverResult.duration, 777);
+  assert.equal(serverResult.durationCalls, 1);
+  assert.equal(serverResult.readingProgress, 25);
+  assert.equal(serverResult.diagnosticCount, 1);
+  assert.equal(serverResult.hasNamespacedDiagnostic, true);
+
+  const clientResult = evaluateEligibilityFailure(false);
+  assert.equal(clientResult.duration, 777);
+  assert.equal(clientResult.durationCalls, 1);
+  assert.equal(clientResult.readingProgress, 25);
+  assert.equal(clientResult.diagnosticCount, 0);
 });
 
 test('Build 42 package includes required metadata and shared entry point', () => {
@@ -123,6 +174,7 @@ test('Build 42 package includes required metadata and shared entry point', () =>
 
   assert.equal(metadata.id, 'InstantSkillBooks');
   assert.equal(metadata.pzversion, '42.20');
+  assert.equal(metadata.versionMin, '42.20.0');
   assert.equal(typeof metadata.name, 'string');
   assert.notEqual(metadata.name.trim(), '');
   assert.equal(fs.existsSync(productionPath), true, 'shared Lua entry point exists');

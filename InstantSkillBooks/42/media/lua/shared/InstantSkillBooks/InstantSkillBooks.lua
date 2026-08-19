@@ -44,7 +44,14 @@ if not InstantSkillBooks._durationWrapped then
 
     function ISReadABook:getDuration()
         local vanillaDuration = vanillaGetDuration(self)
-        if InstantSkillBooks.isEligible(self) then
+        local eligibilityCheckSucceeded, eligible = pcall(InstantSkillBooks.isEligible, self)
+        if not eligibilityCheckSucceeded then
+            if isServer() then
+                print("[InstantSkillBooks] eligibility check failed")
+            end
+            return vanillaDuration
+        end
+        if eligible then
             return 1
         end
         return vanillaDuration

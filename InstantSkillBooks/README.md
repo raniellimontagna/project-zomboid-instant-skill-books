@@ -8,6 +8,7 @@ Instant Skill Book Reading is a Project Zomboid Build 42.20 multiplayer mod. Whe
 - Mod identifier: `InstantSkillBooks`.
 - Version: `1.0.0`.
 - The mod must be installed on the dedicated server and on every participating client.
+- Install the identical mod folder on clients and server: this shared Lua timed-action override participates in Project Zomboid's `DoLuaChecksum` checksum validation.
 - Later Build 42 patches are best-effort compatible because vanilla timed-action and literature APIs may change.
 
 ## Local installation

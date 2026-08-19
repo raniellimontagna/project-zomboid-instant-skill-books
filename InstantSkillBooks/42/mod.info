@@ -4,3 +4,4 @@ description=Shortens eligible skill-book reading to one server-authoritative tim
 author=OpenAI
 modversion=1.0.0
 pzversion=42.20
+versionMin=42.20.0
