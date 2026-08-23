@@ -18,6 +18,27 @@ const metadataPath = path.resolve(
   __dirname,
   '../../../InstantSkillBooks/42/mod.info',
 );
+const sandboxOptionsPath = path.resolve(
+  __dirname,
+  '../../../InstantSkillBooks/42/media/sandbox-options.txt',
+);
+const translationPaths = {
+  EN: path.resolve(
+    __dirname,
+    '../../../InstantSkillBooks/42/media/lua/shared/Translate/EN/Sandbox.json',
+  ),
+  PTBR: path.resolve(
+    __dirname,
+    '../../../InstantSkillBooks/42/media/lua/shared/Translate/PTBR/Sandbox.json',
+  ),
+};
+
+const instantLearningOptions = [
+  { name: 'InstantSkillBooks', defaultValue: 'true' },
+  { name: 'InstantRecipeMagazines', defaultValue: 'false' },
+  { name: 'InstantTechnicalManuals', defaultValue: 'false' },
+  { name: 'InstantEducationalVHS', defaultValue: 'false' },
+];
 
 function encodeLuaBoolean(value) {
   return value === undefined ? 'nil' : value ? 'true' : 'false';
@@ -332,4 +353,37 @@ test('Build 42 package includes required metadata and shared entry point', () =>
   assert.equal(typeof metadata.name, 'string');
   assert.notEqual(metadata.name.trim(), '');
   assert.equal(fs.existsSync(productionPath), true, 'shared Lua entry point exists');
+});
+
+test('Build 42 sandbox metadata registers all Instant Learning options', () => {
+  const sandboxOptions = fs.readFileSync(sandboxOptionsPath, 'utf8');
+  assert.match(sandboxOptions, /^VERSION\s*=\s*1\s*,/m);
+
+  for (const { name, defaultValue } of instantLearningOptions) {
+    const optionPattern = new RegExp(
+      `option\\s+InstantLearning\\.${name}\\s*\\{[^}]*type\\s*=\\s*boolean[^}]*default\\s*=\\s*${defaultValue}\\b[^}]*\\}`,
+    );
+    assert.match(sandboxOptions, optionPattern, `${name} metadata`);
+  }
+});
+
+test('Instant Learning sandbox options have English and Brazilian Portuguese labels and tooltips', () => {
+  const translations = Object.fromEntries(
+    Object.entries(translationPaths).map(([locale, filePath]) => {
+      assert.equal(fs.existsSync(filePath), true, `${locale} translation exists`);
+      return [locale, JSON.parse(fs.readFileSync(filePath, 'utf8'))];
+    }),
+  );
+
+  for (const { name } of instantLearningOptions) {
+    for (const locale of ['EN', 'PTBR']) {
+      const translation = translations[locale];
+      const labelKey = `Sandbox_InstantLearning_${name}`;
+      const tooltipKey = `${labelKey}_tooltip`;
+      assert.equal(typeof translation[labelKey], 'string', `${locale} ${labelKey} label`);
+      assert.notEqual(translation[labelKey].trim(), '', `${locale} ${labelKey} label is non-empty`);
+      assert.equal(typeof translation[tooltipKey], 'string', `${locale} ${tooltipKey} tooltip`);
+      assert.notEqual(translation[tooltipKey].trim(), '', `${locale} ${tooltipKey} tooltip is non-empty`);
+    }
+  }
 });

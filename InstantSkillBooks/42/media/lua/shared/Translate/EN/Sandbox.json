@@ -1,0 +1,11 @@
+{
+  "Sandbox_InstantLearning": "Instant Learning",
+  "Sandbox_InstantLearning_InstantSkillBooks": "Instant Skill Books",
+  "Sandbox_InstantLearning_InstantSkillBooks_tooltip": "Server/world authoritative. When enabled, eligible skill books finish instantly.",
+  "Sandbox_InstantLearning_InstantRecipeMagazines": "Instant Recipe Magazines",
+  "Sandbox_InstantLearning_InstantRecipeMagazines_tooltip": "Server/world authoritative. When enabled, eligible recipe magazines finish instantly.",
+  "Sandbox_InstantLearning_InstantTechnicalManuals": "Instant Technical Manuals",
+  "Sandbox_InstantLearning_InstantTechnicalManuals_tooltip": "Server/world authoritative. Reserved for a later update; this setting currently does nothing.",
+  "Sandbox_InstantLearning_InstantEducationalVHS": "Instant Educational VHS",
+  "Sandbox_InstantLearning_InstantEducationalVHS_tooltip": "Server/world authoritative. Reserved for a later update; this setting currently does nothing."
+}
