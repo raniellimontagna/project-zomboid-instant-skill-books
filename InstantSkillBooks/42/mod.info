@@ -2,6 +2,6 @@ name=Instant Skill Book Reading
 id=InstantSkillBooks
 description=Shortens eligible skill-book reading to one server-authoritative timed-action tick while preserving vanilla reading validation and XP multipliers.
 author=OpenAI
-modversion=1.0.0
+modversion=2.0.0
 pzversion=42.20
 versionMin=42.20.0

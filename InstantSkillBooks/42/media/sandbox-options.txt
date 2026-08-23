@@ -1,0 +1,5 @@
+VERSION = 1,
+option InstantLearning.InstantSkillBooks { type = boolean, default = true, page = InstantLearning, translation = InstantLearning_InstantSkillBooks, },
+option InstantLearning.InstantRecipeMagazines { type = boolean, default = false, page = InstantLearning, translation = InstantLearning_InstantRecipeMagazines, },
+option InstantLearning.InstantTechnicalManuals { type = boolean, default = false, page = InstantLearning, translation = InstantLearning_InstantTechnicalManuals, },
+option InstantLearning.InstantEducationalVHS { type = boolean, default = false, page = InstantLearning, translation = InstantLearning_InstantEducationalVHS, },

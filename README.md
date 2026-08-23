@@ -4,9 +4,18 @@
   <img src="assets/instant-skill-books-cover.png" alt="Instant Skill Books B42 cover" width="256" height="256">
 </p>
 
-Instant Skill Books makes eligible skill books complete in one timed-action tick while preserving Project Zomboid's native server-authoritative validation, page completion, synchronization, and XP multipliers.
+Instant Skill Books v2.0.0 makes selected eligible learning items complete in one timed-action tick while preserving Project Zomboid's native server-authoritative validation, page completion, synchronization, and XP multipliers.
 
-Recipe magazines, maps, newspapers, ordinary literature, books outside the useful skill range, and Illiterate characters retain vanilla behavior.
+## Instant Learning settings
+
+The server/world sandbox page **Instant Learning** has four independent settings. The server applies these settings authoritatively to every player in the world.
+
+- `InstantSkillBooks` — default: `true`. Eligible skill books finish instantly.
+- `InstantRecipeMagazines` — default: `false`. Eligible recipe magazines finish instantly when enabled.
+- `InstantTechnicalManuals` — default: `false`. Visible for future compatibility, but currently inactive.
+- `InstantEducationalVHS` — default: `false`. Visible for future compatibility, but currently inactive.
+
+Technical manuals and educational VHS therefore retain vanilla behavior even when their visible settings are enabled. Maps, newspapers, ordinary literature, books outside the useful skill range, and Illiterate characters also retain vanilla behavior.
 
 ## Steam Workshop
 

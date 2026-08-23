@@ -1,0 +1,11 @@
+{
+  "Sandbox_InstantLearning": "Aprendizado Instantâneo",
+  "Sandbox_InstantLearning_InstantSkillBooks": "Livros de Habilidade Instantâneos",
+  "Sandbox_InstantLearning_InstantSkillBooks_tooltip": "Autoridade do servidor/mundo. Quando ativado, livros de habilidade elegíveis são concluídos instantaneamente.",
+  "Sandbox_InstantLearning_InstantRecipeMagazines": "Revistas de Receitas Instantâneas",
+  "Sandbox_InstantLearning_InstantRecipeMagazines_tooltip": "Autoridade do servidor/mundo. Quando ativado, revistas de receitas elegíveis são concluídas instantaneamente.",
+  "Sandbox_InstantLearning_InstantTechnicalManuals": "Manuais Técnicos Instantâneos",
+  "Sandbox_InstantLearning_InstantTechnicalManuals_tooltip": "Autoridade do servidor/mundo. Reservado para uma atualização futura; esta configuração atualmente não faz nada.",
+  "Sandbox_InstantLearning_InstantEducationalVHS": "VHS Educacional Instantâneo",
+  "Sandbox_InstantLearning_InstantEducationalVHS_tooltip": "Autoridade do servidor/mundo. Reservado para uma atualização futura; esta configuração atualmente não faz nada."
+}
