@@ -1,15 +1,26 @@
-# Instant Skill Book Reading
+# Instant Skill Book Reading v2.0.0
 
-Instant Skill Book Reading is a Project Zomboid Build 42.20 multiplayer mod. When a character reads an eligible skill book, the vanilla reading action completes in one timed-action tick. Vanilla server-side validation, page completion, and XP multiplier handling remain in charge. Recipe magazines, maps, newspapers, ordinary literature, ineligible books, and Illiterate characters retain vanilla reading behavior.
+Instant Skill Book Reading is a Project Zomboid Build 42.20 multiplayer mod. When a character reads an enabled eligible skill book or recipe magazine, the vanilla reading action completes in one timed-action tick. Vanilla server-side validation, page completion, and XP multiplier handling remain in charge. Maps, newspapers, ordinary literature, ineligible books, and Illiterate characters retain vanilla reading behavior.
 
 ## Compatibility
 
 - Target: Project Zomboid Build 42.20 stable.
 - Mod identifier: `InstantSkillBooks`.
-- Version: `1.0.0`.
+- Version: `2.0.0`.
 - The mod must be installed on the dedicated server and on every participating client.
 - Install the identical mod folder on clients and server: this shared Lua timed-action override participates in Project Zomboid's `DoLuaChecksum` checksum validation.
 - Later Build 42 patches are best-effort compatible because vanilla timed-action and literature APIs may change.
+
+## Instant Learning sandbox settings
+
+The server/world owner configures these independent options on the **Instant Learning** sandbox page. They are server/world authoritative, so all players in the same save use the same settings.
+
+- `InstantSkillBooks` — default: `true`. Eligible skill books complete instantly.
+- `InstantRecipeMagazines` — default: `false`. Eligible recipe magazines complete instantly when enabled.
+- `InstantTechnicalManuals` — default: `false`. This visible option is reserved for a future update and is currently inactive.
+- `InstantEducationalVHS` — default: `false`. This visible option is reserved for a future update and is currently inactive.
+
+Technical manuals and educational VHS keep vanilla behavior even if their reserved options are enabled.
 
 ## Local installation
 
@@ -52,12 +63,14 @@ Mods=InstantSkillBooks
 
 With the mod enabled on both server and client, verify:
 
-1. In multiplayer, begin reading an unread skill book appropriate to the character's skill range; it completes immediately and grants the vanilla multiplier.
-2. Repeating the action does not stack or duplicate benefits.
-3. A recipe magazine, map, newspaper, or ordinary book retains vanilla reading behavior.
-4. Moving or dropping the item before vanilla server validation does not grant progress.
-5. A non-skill item cannot enter the instant-completion branch.
-6. A second multiplayer player can use the feature independently.
-7. Disabling the mod restores vanilla behavior without corrupting the save or item.
+1. With `InstantSkillBooks` enabled, begin reading an unread skill book appropriate to the character's skill range; it completes immediately and grants the vanilla multiplier.
+2. With `InstantRecipeMagazines` enabled, begin reading an eligible recipe magazine; it completes immediately while vanilla completion grants the recipe.
+3. Repeating the action does not stack or duplicate benefits.
+4. With the recipe option disabled, recipe magazines, maps, newspapers, and ordinary books retain vanilla reading behavior.
+5. Technical manuals and educational VHS retain vanilla behavior because their visible v2 settings are currently inactive.
+6. Moving or dropping the item before vanilla server validation does not grant progress.
+7. A non-skill item cannot enter the instant-completion branch.
+8. A second multiplayer player can use the feature independently.
+9. Disabling the mod restores vanilla behavior without corrupting the save or item.
 
 If any check fails, disable the mod, restore vanilla behavior, and report the Build 42.20 server log together with the exact item and character state.

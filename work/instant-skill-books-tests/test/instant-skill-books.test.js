@@ -32,6 +32,27 @@ const translationPaths = {
     '../../../InstantSkillBooks/42/media/lua/shared/Translate/PTBR/Sandbox.json',
   ),
 };
+const repositoryRoot = path.resolve(__dirname, '../../..');
+const documentationPaths = [
+  path.join(repositoryRoot, 'README.md'),
+  path.join(repositoryRoot, 'InstantSkillBooks/README.md'),
+];
+const workshopStagingPath = path.join(
+  repositoryRoot,
+  'outputs/InstantSkillBooks-Workshop',
+);
+const workshopMetadataPath = path.join(workshopStagingPath, 'workshop.txt');
+const workshopModPath = path.join(
+  workshopStagingPath,
+  'Contents/mods/InstantSkillBooks',
+);
+
+const documentedInstantLearningOptions = [
+  ['InstantSkillBooks', 'true'],
+  ['InstantRecipeMagazines', 'false'],
+  ['InstantTechnicalManuals', 'false'],
+  ['InstantEducationalVHS', 'false'],
+];
 
 const instantLearningOptions = [
   {
@@ -415,5 +436,73 @@ test('Instant Learning sandbox options have English and Brazilian Portuguese lab
       assert.equal(typeof translation[tooltipKey], 'string', `${locale} ${tooltipKey} tooltip`);
       assert.notEqual(translation[tooltipKey].trim(), '', `${locale} ${tooltipKey} tooltip is non-empty`);
     }
+  }
+});
+
+test('v2 documentation publishes all settings, defaults, version, and Workshop ID', () => {
+  for (const documentationPath of documentationPaths) {
+    const documentation = fs.readFileSync(documentationPath, 'utf8');
+    assert.match(documentation, /2\.0\.0/, `${path.basename(documentationPath)} names v2`);
+    assert.match(documentation, /3786090811/, `${path.basename(documentationPath)} names Workshop ID`);
+
+    for (const [name, defaultValue] of documentedInstantLearningOptions) {
+      assert.match(
+        documentation,
+        new RegExp(`\\\`${name}\\\`[^\\n]*\\\`${defaultValue}\\\``),
+        `${path.basename(documentationPath)} documents ${name} default`,
+      );
+    }
+  }
+
+  const metadata = fs.readFileSync(metadataPath, 'utf8');
+  assert.match(metadata, /^modversion=2\.0\.0$/m);
+});
+
+test('Workshop staging contains the v2 package with required metadata and no development artifacts', () => {
+  assert.equal(fs.existsSync(workshopMetadataPath), true, 'workshop.txt exists');
+  const workshopMetadata = Object.fromEntries(
+    fs
+      .readFileSync(workshopMetadataPath, 'utf8')
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => {
+        const separator = line.indexOf('=');
+        assert.notEqual(separator, -1, `workshop metadata line is key=value: ${line}`);
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }),
+  );
+  assert.equal(workshopMetadata.version, '1');
+  assert.equal(workshopMetadata.id, '3786090811');
+  assert.equal(workshopMetadata.visibility, 'public');
+
+  const requiredFiles = [
+    '42/mod.info',
+    '42/media/sandbox-options.txt',
+    '42/media/lua/shared/Translate/EN/Sandbox.json',
+    '42/media/lua/shared/Translate/PTBR/Sandbox.json',
+    '42/media/lua/shared/InstantSkillBooks/InstantSkillBooks.lua',
+  ];
+  for (const relativePath of requiredFiles) {
+    assert.equal(
+      fs.existsSync(path.join(workshopModPath, relativePath)),
+      true,
+      `staging includes ${relativePath}`,
+    );
+  }
+
+  const stagedPaths = fs.readdirSync(workshopStagingPath, { recursive: true });
+  for (const forbiddenPathSegment of [
+    'test',
+    'tests',
+    'node_modules',
+    'docs',
+    '.worktrees',
+    'work',
+  ]) {
+    assert.equal(
+      stagedPaths.some((stagedPath) => stagedPath.split(path.sep).includes(forbiddenPathSegment)),
+      false,
+      `staging excludes ${forbiddenPathSegment}`,
+    );
   }
 });
