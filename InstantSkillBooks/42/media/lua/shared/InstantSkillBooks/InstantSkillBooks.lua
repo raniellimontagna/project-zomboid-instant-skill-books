@@ -77,7 +77,7 @@ if not InstantSkillBooks._durationWrapped then
         local eligibilityCheckSucceeded, eligible = pcall(InstantSkillBooks.isEligible, self)
         if not eligibilityCheckSucceeded then
             if isServer() then
-                print("[InstantSkillBooks] eligibility check failed")
+                print("[InstantLearning] eligibility check failed")
             end
             return vanillaDuration
         end
