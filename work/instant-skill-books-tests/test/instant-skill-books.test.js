@@ -34,10 +34,30 @@ const translationPaths = {
 };
 
 const instantLearningOptions = [
-  { name: 'InstantSkillBooks', defaultValue: 'true' },
-  { name: 'InstantRecipeMagazines', defaultValue: 'false' },
-  { name: 'InstantTechnicalManuals', defaultValue: 'false' },
-  { name: 'InstantEducationalVHS', defaultValue: 'false' },
+  {
+    name: 'InstantSkillBooks',
+    defaultValue: 'true',
+    page: 'InstantLearning',
+    translation: 'InstantLearning_InstantSkillBooks',
+  },
+  {
+    name: 'InstantRecipeMagazines',
+    defaultValue: 'false',
+    page: 'InstantLearning',
+    translation: 'InstantLearning_InstantRecipeMagazines',
+  },
+  {
+    name: 'InstantTechnicalManuals',
+    defaultValue: 'false',
+    page: 'InstantLearning',
+    translation: 'InstantLearning_InstantTechnicalManuals',
+  },
+  {
+    name: 'InstantEducationalVHS',
+    defaultValue: 'false',
+    page: 'InstantLearning',
+    translation: 'InstantLearning_InstantEducationalVHS',
+  },
 ];
 
 function encodeLuaBoolean(value) {
@@ -359,11 +379,15 @@ test('Build 42 sandbox metadata registers all Instant Learning options', () => {
   const sandboxOptions = fs.readFileSync(sandboxOptionsPath, 'utf8');
   assert.match(sandboxOptions, /^VERSION\s*=\s*1\s*,/m);
 
-  for (const { name, defaultValue } of instantLearningOptions) {
+  for (const { name, defaultValue, page, translation } of instantLearningOptions) {
     const optionPattern = new RegExp(
-      `option\\s+InstantLearning\\.${name}\\s*\\{[^}]*type\\s*=\\s*boolean[^}]*default\\s*=\\s*${defaultValue}\\b[^}]*\\}`,
+      `option\\s+InstantLearning\\.${name}\\s*\\{[^}]*type\\s*=\\s*boolean[^}]*default\\s*=\\s*${defaultValue}\\b[^}]*page\\s*=\\s*${page}\\b[^}]*translation\\s*=\\s*${translation}\\b[^}]*\\}`,
     );
-    assert.match(sandboxOptions, optionPattern, `${name} metadata`);
+    assert.match(
+      sandboxOptions,
+      optionPattern,
+      `${name} metadata includes exact page and translation`,
+    );
   }
 });
 
@@ -374,6 +398,12 @@ test('Instant Learning sandbox options have English and Brazilian Portuguese lab
       return [locale, JSON.parse(fs.readFileSync(filePath, 'utf8'))];
     }),
   );
+
+  for (const locale of ['EN', 'PTBR']) {
+    const pageLabel = translations[locale].Sandbox_InstantLearning;
+    assert.equal(typeof pageLabel, 'string', `${locale} Sandbox_InstantLearning label`);
+    assert.notEqual(pageLabel.trim(), '', `${locale} Sandbox_InstantLearning label is non-empty`);
+  }
 
   for (const { name } of instantLearningOptions) {
     for (const locale of ['EN', 'PTBR']) {
