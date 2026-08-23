@@ -19,7 +19,19 @@ const metadataPath = path.resolve(
   '../../../InstantSkillBooks/42/mod.info',
 );
 
-function loadProduction({ server = false } = {}) {
+function encodeLuaBoolean(value) {
+  return value === undefined ? 'nil' : value ? 'true' : 'false';
+}
+
+function encodeInstantLearning(settings) {
+  if (settings === undefined) {
+    return '{}';
+  }
+
+  return `{ InstantSkillBooks = ${encodeLuaBoolean(settings.InstantSkillBooks)}, InstantRecipeMagazines = ${encodeLuaBoolean(settings.InstantRecipeMagazines)}, InstantTechnicalManuals = ${encodeLuaBoolean(settings.InstantTechnicalManuals)}, InstantEducationalVHS = ${encodeLuaBoolean(settings.InstantEducationalVHS)} }`;
+}
+
+function loadProduction({ server = false, instantLearning } = {}) {
   const state = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(state);
 
@@ -28,6 +40,9 @@ function loadProduction({ server = false } = {}) {
     CharacterTrait = { ILLITERATE = "Illiterate" }
     SkillBook = {
       Mechanics = { perk = "Mechanics" },
+    }
+    SandboxVars = {
+      InstantLearning = ${instantLearning === null ? 'nil' : encodeInstantLearning(instantLearning)},
     }
     ISReadABook = {
       durationCalls = 0,
@@ -52,6 +67,61 @@ function loadProduction({ server = false } = {}) {
   );
   assert.equal(lua.lua_pcall(state, 0, 0, 0), lua.LUA_OK);
   return state;
+}
+
+function evaluateV2Case({ category, settings }) {
+  const state = loadProduction({ instantLearning: settings });
+  const itemScript = {
+    skill: `
+      getNumberOfPages = function() return 100 end,
+      getSkillTrained = function() return "Mechanics" end,
+      getLvlSkillTrained = function() return 1 end,
+      getMaxLevelTrained = function() return 3 end,
+    `,
+    recipe: `
+      getNumberOfPages = function() return 100 end,
+      getLearnedRecipes = function()
+        return { isEmpty = function() return false end }
+      end,
+    `,
+    ordinary: `
+      getNumberOfPages = function() return 100 end,
+    `,
+    manualVhs: `
+      getNumberOfPages = function() return 100 end,
+      getMediaType = function() return "VHS" end,
+      getSkillTrained = function() return nil end,
+    `,
+    learnedRecipesMissing: `
+      getNumberOfPages = function() return 100 end,
+    `,
+    learnedRecipesEmpty: `
+      getNumberOfPages = function() return 100 end,
+      getLearnedRecipes = function()
+        return { isEmpty = function() return true end }
+      end,
+    `,
+  }[category];
+  assert.ok(itemScript, `unknown v2 category: ${category}`);
+
+  const script = `
+    local item = { ${itemScript} }
+    local character = {
+      getPerkLevel = function() return 0 end,
+      hasTrait = function() return false end,
+    }
+    local action = { item = item, character = character }
+    local duration = ISReadABook.getDuration(action)
+    return duration, ISReadABook.durationCalls
+  `;
+
+  const status = lauxlib.luaL_loadstring(state, to_luastring(script));
+  assert.equal(status, lua.LUA_OK);
+  assert.equal(lua.lua_pcall(state, 0, 2, 0), lua.LUA_OK);
+  const duration = lua.lua_tointeger(state, -2);
+  const durationCalls = lua.lua_tointeger(state, -1);
+  lua.lua_pop(state, 2);
+  return { duration, durationCalls };
 }
 
 function evaluateEligibilityFailure(server) {
@@ -156,6 +226,90 @@ test('duration wrapper shortens only eligible books and fails closed on eligibil
   assert.equal(clientResult.durationCalls, 1);
   assert.equal(clientResult.readingProgress, 25);
   assert.equal(clientResult.diagnosticCount, 0);
+});
+
+test('v2 options and capability categories control instant reading', () => {
+  assert.equal(
+    evaluateV2Case({ category: 'skill', settings: { InstantSkillBooks: true } }).duration,
+    1,
+    'skill book + skill option true',
+  );
+  assert.equal(
+    evaluateV2Case({ category: 'skill', settings: { InstantSkillBooks: false } }).duration,
+    777,
+    'skill book + skill option false',
+  );
+  assert.equal(
+    evaluateV2Case({ category: 'recipe', settings: { InstantRecipeMagazines: true } }).duration,
+    1,
+    'recipe magazine + recipe option true',
+  );
+  assert.equal(
+    evaluateV2Case({ category: 'recipe', settings: { InstantRecipeMagazines: false } }).duration,
+    777,
+    'recipe magazine + recipe option false',
+  );
+  assert.equal(
+    evaluateV2Case({
+      category: 'ordinary',
+      settings: {
+        InstantSkillBooks: true,
+        InstantRecipeMagazines: true,
+        InstantTechnicalManuals: true,
+        InstantEducationalVHS: true,
+      },
+    }).duration,
+    777,
+    'ordinary literature + all options',
+  );
+  assert.equal(
+    evaluateV2Case({
+      category: 'manualVhs',
+      settings: {
+        InstantSkillBooks: true,
+        InstantRecipeMagazines: true,
+        InstantTechnicalManuals: true,
+        InstantEducationalVHS: true,
+      },
+    }).duration,
+    777,
+    'manual/VHS-shaped item + options true',
+  );
+
+  const missingSettingsSkill = evaluateV2Case({ category: 'skill', settings: null });
+  assert.equal(missingSettingsSkill.duration, 1, 'missing settings: skill books enabled');
+  const missingSettingsRecipe = evaluateV2Case({ category: 'recipe', settings: null });
+  assert.equal(missingSettingsRecipe.duration, 777, 'missing settings: recipes disabled');
+  assert.equal(
+    evaluateV2Case({ category: 'learnedRecipesMissing', settings: { InstantRecipeMagazines: true } }).duration,
+    777,
+    'learnedRecipes missing',
+  );
+  assert.equal(
+    evaluateV2Case({ category: 'learnedRecipesEmpty', settings: { InstantRecipeMagazines: true } }).duration,
+    777,
+    'learnedRecipes empty',
+  );
+
+  for (const category of [
+    'skill',
+    'recipe',
+    'ordinary',
+    'manualVhs',
+    'learnedRecipesMissing',
+    'learnedRecipesEmpty',
+  ]) {
+    const result = evaluateV2Case({
+      category,
+      settings: {
+        InstantSkillBooks: true,
+        InstantRecipeMagazines: true,
+        InstantTechnicalManuals: true,
+        InstantEducationalVHS: true,
+      },
+    });
+    assert.equal(result.durationCalls, 1, `${category}: vanilla duration call count`);
+  }
 });
 
 test('Build 42 package includes required metadata and shared entry point', () => {
