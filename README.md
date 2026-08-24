@@ -1,8 +1,14 @@
-# Instant Skill Books for Project Zomboid B42
+# Project Zomboid B42 Mods
 
 <p align="center">
   <img src="assets/instant-skill-books-cover.png" alt="Instant Skill Books B42 cover" width="256" height="256">
 </p>
+
+This repository contains independent Project Zomboid Build 42 mods. Each mod keeps its own source, identity, tests, documentation, and release packaging.
+
+## Instant Skill Books v2.0.0
+
+See the complete [Instant Skill Books guide](mods/InstantSkillBooks/README.md). Its source is in [`mods/InstantSkillBooks/`](mods/InstantSkillBooks/).
 
 Instant Skill Books v2.0.0 makes selected eligible learning items complete in one timed-action tick while preserving Project Zomboid's native server-authoritative validation, page completion, synchronization, and XP multipliers.
 
@@ -36,7 +42,7 @@ Install the same Workshop version on the server and every client because the sha
 
 ## Development
 
-The distributable mod is in [`InstantSkillBooks/`](InstantSkillBooks/). The behavior tests use Node.js and Fengari:
+The distributable mod is in [`mods/InstantSkillBooks/`](mods/InstantSkillBooks/). The behavior tests use Node.js and Fengari:
 
 ```powershell
 cd work/instant-skill-books-tests
@@ -45,6 +51,20 @@ node --test
 ```
 
 Live multiplayer acceptance still needs to be performed against the target Project Zomboid server build.
+
+## Smart Storage B42
+
+Smart Storage is an independent, server-authoritative nearby-storage organizer. It adds a **Depositar itens compatíveis** inventory action and moves only eligible player-owned items into compatible nearby containers after server-side validation.
+
+See the [Smart Storage guide](mods/SmartStorage/README.md). Smart Storage has no Workshop manifest or Workshop ID until the user creates its separate Workshop item.
+
+The test package is in [`work/smart-storage-tests/`](work/smart-storage-tests/) and runs with Node.js and Fengari:
+
+```powershell
+cd work/smart-storage-tests
+pnpm install --frozen-lockfile
+node --test
+```
 
 ## Future coop mods
 

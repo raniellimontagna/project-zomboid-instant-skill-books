@@ -2,6 +2,8 @@
 
 Instant Skill Book Reading is a Project Zomboid Build 42.20 multiplayer mod. When a character reads an enabled eligible skill book or recipe magazine, the vanilla reading action completes in one timed-action tick. Vanilla server-side validation, page completion, and XP multiplier handling remain in charge. Maps, newspapers, ordinary literature, ineligible books, and Illiterate characters retain vanilla reading behavior.
 
+The repository source for this mod is [`mods/InstantSkillBooks/`](../InstantSkillBooks/). The published Workshop archive remains rooted at `Contents/mods/InstantSkillBooks/`, so this source move does not change its Mod ID, Workshop ID, behavior, or archive layout.
+
 ## Compatibility
 
 - Target: Project Zomboid Build 42.20 stable.

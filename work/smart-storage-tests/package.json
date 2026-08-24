@@ -1,0 +1,11 @@
+{
+  "name": "smart-storage-tests",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "fengari": "0.1.4"
+  }
+}

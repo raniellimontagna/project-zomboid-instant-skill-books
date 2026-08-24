@@ -13,30 +13,30 @@ const {
 
 const productionPath = path.resolve(
   __dirname,
-  '../../../InstantSkillBooks/42/media/lua/shared/InstantSkillBooks/InstantSkillBooks.lua',
+  '../../../mods/InstantSkillBooks/42/media/lua/shared/InstantSkillBooks/InstantSkillBooks.lua',
 );
 const metadataPath = path.resolve(
   __dirname,
-  '../../../InstantSkillBooks/42/mod.info',
+  '../../../mods/InstantSkillBooks/42/mod.info',
 );
 const sandboxOptionsPath = path.resolve(
   __dirname,
-  '../../../InstantSkillBooks/42/media/sandbox-options.txt',
+  '../../../mods/InstantSkillBooks/42/media/sandbox-options.txt',
 );
 const translationPaths = {
   EN: path.resolve(
     __dirname,
-    '../../../InstantSkillBooks/42/media/lua/shared/Translate/EN/Sandbox.json',
+    '../../../mods/InstantSkillBooks/42/media/lua/shared/Translate/EN/Sandbox.json',
   ),
   PTBR: path.resolve(
     __dirname,
-    '../../../InstantSkillBooks/42/media/lua/shared/Translate/PTBR/Sandbox.json',
+    '../../../mods/InstantSkillBooks/42/media/lua/shared/Translate/PTBR/Sandbox.json',
   ),
 };
 const repositoryRoot = path.resolve(__dirname, '../../..');
 const documentationPaths = [
   path.join(repositoryRoot, 'README.md'),
-  path.join(repositoryRoot, 'InstantSkillBooks/README.md'),
+  path.join(repositoryRoot, 'mods/InstantSkillBooks/README.md'),
 ];
 
 const documentedInstantLearningOptions = [
@@ -77,7 +77,7 @@ function createWorkshopStagingFixture(temporaryPath) {
   const stagingPath = path.join(temporaryPath, 'InstantSkillBooks-Workshop');
   const modPath = path.join(stagingPath, 'Contents/mods/InstantSkillBooks');
   fs.mkdirSync(modPath, { recursive: true });
-  fs.cpSync(path.join(repositoryRoot, 'InstantSkillBooks'), modPath, { recursive: true });
+  fs.cpSync(path.join(repositoryRoot, 'mods/InstantSkillBooks'), modPath, { recursive: true });
   fs.mkdirSync(path.join(modPath, 'common'), { recursive: true });
   fs.copyFileSync(
     path.join(repositoryRoot, 'assets/instant-skill-books-cover.png'),
@@ -697,4 +697,23 @@ test('Workshop package fixture is hermetic and its ZIP has only release entries'
   } finally {
     fs.rmSync(temporaryPath, { recursive: true, force: true });
   }
+});
+
+test('repository migration keeps Instant Skill Books under mods and preserves published identity', () => {
+  assert.equal(fs.existsSync(path.join(repositoryRoot, 'mods/InstantSkillBooks')), true);
+  assert.equal(fs.existsSync(path.join(repositoryRoot, 'InstantSkillBooks')), false);
+
+  const metadata = Object.fromEntries(
+    fs.readFileSync(metadataPath, 'utf8')
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => {
+        const separator = line.indexOf('=');
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }),
+  );
+  assert.equal(metadata.id, 'InstantSkillBooks');
+  assert.equal(metadata.modversion, '2.0.0');
+  assert.equal(metadata.pzversion, '42.20');
+  assert.equal(metadata.versionMin, '42.20.0');
 });
