@@ -23,14 +23,19 @@ local vanillaCategories = {
     Literature = "Literature",
 }
 
-local vanillaTags = {
-    Tools = { "TOOLS", "TOOL" },
-    Medicine = { "MEDICINE", "MEDICAL" },
-    Construction = { "CONSTRUCTION", "BUILDING_MATERIAL", "MATERIAL" },
+local itemTagNames = {
+    Tools = {
+        "HAMMER", "SAW", "SCREWDRIVER", "WRENCH", "CROWBAR", "PIPE_WRENCH",
+        "PRY_BAR", "BLOW_TORCH",
+    },
+    Construction = {
+        "HAMMER", "SAW", "SCREWDRIVER", "WRENCH", "CROWBAR", "PIPE_WRENCH",
+        "PRY_BAR", "BLOW_TORCH",
+    },
     Ammo = { "AMMO" },
-    Fuel = { "FUEL" },
+    Fuel = { "FUEL", "FUEL_CONTAINER" },
     Farming = { "IS_SEED", "FERTILIZER", "COMPOST" },
-    Fishing = { "FISHING", "FISHING_ROD", "FISHING_LINE", "FISHING_HOOK" },
+    Fishing = { "FISHING_ROD", "FISHING_LINE", "FISHING_HOOK" },
 }
 
 local allowlistKeys = {
@@ -97,6 +102,18 @@ local function fullType(item)
     return nil
 end
 
+local function itemTag(name)
+    local namespaceType = type(ItemTag)
+    if namespaceType ~= "table" and namespaceType ~= "userdata" then
+        return nil
+    end
+    local ok, token = pcall(function() return ItemTag[name] end)
+    if ok and token ~= nil then
+        return token
+    end
+    return nil
+end
+
 local function containsTag(collection, tag)
     local collectionType = type(collection)
     if collectionType ~= "table" and collectionType ~= "userdata" then
@@ -128,6 +145,11 @@ local function hasTag(item, tag)
     end
     local tagsOk, tags = call(item, "getTags")
     return tagsOk == true and containsTag(tags, tag)
+end
+
+local function medicalTypeMatches(item)
+    local ok, value = call(item, "getStringItemType")
+    return ok == true and value == "Medical"
 end
 
 local function allowlistMatches(item, category, settings)
@@ -167,10 +189,14 @@ function Classifier.matches(item, category, settings)
         if allowlistMatches(item, category, settings) then
             return true
         end
-        local tags = vanillaTags[category]
-        if tags ~= nil then
-            for index = 1, #tags do
-                if hasTag(item, tags[index]) then
+        if category == "Medicine" and medicalTypeMatches(item) then
+            return true
+        end
+        local tagNames = itemTagNames[category]
+        if tagNames ~= nil then
+            for index = 1, #tagNames do
+                local token = itemTag(tagNames[index])
+                if token ~= nil and hasTag(item, token) then
                     return true
                 end
             end

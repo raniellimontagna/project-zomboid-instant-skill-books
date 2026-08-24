@@ -82,69 +82,13 @@ local function anyFlag(item, character, itemName, characterName)
     return "ok", false
 end
 
-local vanillaCategories = {
-    Food = true,
-    Weapon = true,
-    Clothing = true,
-    Literature = true,
-}
-
-local knownTags = {
-    "TOOLS", "TOOL", "MEDICINE", "MEDICAL", "CONSTRUCTION", "BUILDING_MATERIAL",
-    "MATERIAL", "AMMO", "FUEL", "IS_SEED", "FERTILIZER", "COMPOST", "FISHING",
-    "FISHING_ROD", "FISHING_LINE", "FISHING_HOOK",
-}
-
-local allowlistCategories = {
-    "Food", "Tools", "Medicine", "Construction", "Weapons", "Ammo", "Clothing",
-    "Literature", "Fuel", "Farming", "Fishing",
-}
-
 local function itemIdentity(item, settings)
-    local fullTypeStatus, fullType = call(item, "getFullType")
-    if fullTypeStatus == "error" then
+    if SmartStorage.Classifier == nil
+        or type(SmartStorage.Classifier.classify) ~= "function" then
         return false
     end
-    if fullTypeStatus == "ok" and type(fullType) ~= "string" then
-        return false
-    end
-
-    local categoryStatus, category = call(item, "getCategory")
-    if categoryStatus == "error" then
-        return false
-    end
-    if categoryStatus == "ok" and type(category) ~= "string" then
-        return false
-    end
-    if categoryStatus == "ok" and vanillaCategories[category] then
-        return true
-    end
-
-    if fullTypeStatus == "ok" and fullType ~= "" then
-        for index = 1, #allowlistCategories do
-            local values = settings[allowlistCategories[index] .. "ItemTypes"]
-            if type(values) == "table" and values[fullType] == true then
-                return true
-            end
-        end
-    end
-
-    local tagStatus, tagValue
-    for index = 1, #knownTags do
-        tagStatus, tagValue = call(item, "hasTag", knownTags[index])
-        if tagStatus == "error" then
-            return false
-        end
-        if tagStatus == "ok" then
-            if type(tagValue) ~= "boolean" then
-                return false
-            end
-            if tagValue then
-                return true
-            end
-        end
-    end
-    return false
+    local ok, category = pcall(SmartStorage.Classifier.classify, item, settings)
+    return ok == true and type(category) == "string"
 end
 
 local function conditionReason(item, threshold)

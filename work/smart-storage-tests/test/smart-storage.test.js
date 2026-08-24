@@ -243,6 +243,17 @@ function loadSmartStorage({ sandboxExpression = 'nil', modules = [], bootstrap: 
   const bootstrap = `
     SmartStorage = {}
     SandboxVars = { SmartStorage = ${sandboxExpression} }
+    ItemTag = {
+      AMMO = {}, IS_SEED = {}, FERTILIZER = {}, COMPOST = {},
+      FISHING_ROD = {}, FISHING_LINE = {}, FISHING_HOOK = {},
+      HAMMER = {}, SAW = {}, SCREWDRIVER = {}, WRENCH = {},
+      CROWBAR = {}, PIPE_WRENCH = {}, PRY_BAR = {}, BLOW_TORCH = {},
+      FUEL = {}, FUEL_CONTAINER = {},
+    }
+    assertItemTag = function(value, expected)
+      if type(value) == 'string' then error('production passed a string ItemTag') end
+      return value == expected
+    end
     ${extraBootstrap}
   `;
   assert.equal(lauxlib.luaL_loadstring(state, to_luastring(bootstrap)), lua.LUA_OK);
@@ -328,8 +339,8 @@ test('Smart Storage classifies exact vanilla categories, tags, and explicit full
     defaults.Weapons, defaults.Ammo, defaults.Farming = true, true, true
     local food = { getCategory = function() return 'Food' end }
     local weapon = { getCategory = function() return 'Weapon' end }
-    local ammo = { hasTag = function(_, tag) return tag == 'AMMO' end }
-    local seed = { hasTag = function(_, tag) return tag == 'IS_SEED' end }
+    local ammo = { hasTag = function(_, tag) return assertItemTag(tag, ItemTag.AMMO) end }
+    local seed = { hasTag = function(_, tag) return assertItemTag(tag, ItemTag.IS_SEED) end }
     local foodAllowlist = {
       getFullType = function() return 'Base.CustomFood' end,
       getCategory = function() return 'Other' end,
@@ -338,16 +349,21 @@ test('Smart Storage classifies exact vanilla categories, tags, and explicit full
       getFullType = function() return 'Base.Pills' end,
       getCategory = function() return 'Other' end,
     }
+    local medical = {
+      getStringItemType = function() return 'Medical' end,
+      getCategory = function() return 'Other' end,
+    }
     return SmartStorage.Classifier.classify(food, defaults),
       SmartStorage.Classifier.classify(weapon, defaults),
       SmartStorage.Classifier.classify(ammo, defaults),
       SmartStorage.Classifier.classify(seed, defaults),
       SmartStorage.Classifier.classify(foodAllowlist, defaults),
-      SmartStorage.Classifier.classify(medicine, defaults)
-  `, 6, {
+      SmartStorage.Classifier.classify(medicine, defaults),
+      SmartStorage.Classifier.classify(medical, defaults)
+  `, 7, {
     sandboxExpression: `{ FoodItemTypes = 'Base.CustomFood', MedicineItemTypes = 'Base.Pills' }`,
   });
-  assert.deepEqual(values, ['Food', 'Weapons', 'Ammo', 'Farming', 'Food', 'Medicine']);
+  assert.deepEqual(values, ['Food', 'Weapons', 'Ammo', 'Farming', 'Food', 'Medicine', 'Medicine']);
 });
 
 test('Smart Storage resolves overlaps by active CategoryPriority', () => {
@@ -357,7 +373,7 @@ test('Smart Storage resolves overlaps by active CategoryPriority', () => {
     settings.CategoryPriority = { 'Ammo', 'Food' }
     local item = {
       getCategory = function() return 'Food' end,
-      hasTag = function(_, tag) return tag == 'AMMO' end,
+      hasTag = function(_, tag) return assertItemTag(tag, ItemTag.AMMO) end,
     }
     return SmartStorage.Classifier.matches(item, 'Food', settings),
       SmartStorage.Classifier.matches(item, 'Ammo', settings),
@@ -409,6 +425,18 @@ test('Smart Storage never classifies from display names', () => {
       SmartStorage.Classifier.matches(item, 'Food', settings)
   `, 2);
   assert.deepEqual(values, [true, false]);
+});
+
+test('Smart Storage passes B42 ItemTag tokens to hasTag', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.Ammo = true
+    local item = {
+      hasTag = function(_, tag) return assertItemTag(tag, ItemTag.AMMO) end,
+    }
+    return SmartStorage.Classifier.classify(item, settings)
+  `, 1);
+  assert.deepEqual(values, ['Ammo']);
 });
 
 test('Smart Storage registers every Build 42 sandbox option with safe defaults', () => {
@@ -507,6 +535,11 @@ test('Smart Storage protects unsafe items and allows a valid item', () => {
     end
     local unknown = { getCategory = function() return 'Mystery' end }
     local valid = base()
+    local ammoSettings = SmartStorage.Settings.read()
+    ammoSettings.Ammo = true
+    local tagged = base()
+    tagged.getCategory = function() return 'Other' end
+    tagged.hasTag = function(_, tag) return assertItemTag(tag, ItemTag.AMMO) end
     local function check(item)
       if SmartStorage.Protection == nil or SmartStorage.Protection.check == nil then
         return nil
@@ -521,14 +554,17 @@ test('Smart Storage protects unsafe items and allows a valid item', () => {
     local filledAllowed, filledReasonValue = check(filled)
     local unknownAllowed, unknownReason = check(unknown)
     local validAllowed, validReason = check(valid)
+    local taggedAllowed, taggedReason = SmartStorage.Protection.check(tagged, character, ammoSettings)
     return equippedAllowed, equippedReason, wornAllowed, wornReason,
       favoriteAllowed, favoriteReason, brokenAllowed, brokenReason,
       lowAllowed, lowReason, filledAllowed, filledReasonValue,
-      unknownAllowed, unknownReason, validAllowed, validReason
-  `, 16);
+      unknownAllowed, unknownReason, validAllowed, validReason,
+      taggedAllowed, taggedReason
+  `, 18);
   assert.deepEqual(values, [
     false, 'equipped', false, 'worn', false, 'favorite', false, 'low_condition',
     false, 'low_condition', false, 'filled_container', false, 'invalid', true, null,
+    true, null,
   ]);
 });
 
@@ -888,7 +924,7 @@ test('Smart Storage checks item-aware capacity and priority classification befor
       local value = {
         container = source, heavy = heavy,
         getCategory = function() return 'Food' end,
-        hasTag = function(_, tag) return ammo and tag == 'AMMO' end,
+        hasTag = function(_, tag) return ammo and assertItemTag(tag, ItemTag.AMMO) end,
         getCondition = function() return 100 end,
         getConditionMax = function() return 100 end,
         getContainer = function(self) return self.container end,
