@@ -1,6 +1,6 @@
 # Coop Quality-of-Life Mods — Future Roadmap
 
-> Status: Smart Storage B42 is implemented as a local Build 42.20+ package with automated contract coverage. Workshop upload and two-client live acceptance are explicit follow-up work; Shared Map Enhancer remains planned. This roadmap does not change the current Instant Learning implementation.
+> Status: Smart Storage B42 is implemented as a local Build 42.20+ package with automated contract coverage. Workshop upload and two-client live acceptance remain explicit follow-up work. Shared Map Enhancer is the third mod in progress. This roadmap does not change the current Instant Learning implementation.
 
 ## Context
 
@@ -45,6 +45,10 @@ Make it faster to organize nearby storage without scanning the whole base or mov
 - Optional compact storage summary for nearby containers.
 
 ## 2. Shared Map Enhancer B42
+
+### Implementation status
+
+Shared Map Enhancer B42 is the third independent mod in progress. Its scaffold targets Build 42.20+, has its own identity and tests, and deliberately has no Workshop manifest or Workshop ID. Future work includes the server-authoritative marker implementation and a dedicated two-client live acceptance session.
 
 ### Goal
 
