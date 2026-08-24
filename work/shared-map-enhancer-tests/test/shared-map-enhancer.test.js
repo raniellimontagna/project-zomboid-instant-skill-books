@@ -376,3 +376,73 @@ test('client adapter requests a snapshot after rejected snapshot and preserves p
     Events = { OnServerCommand = { Add = function(handler) Events.OnServerCommand.handler = handler end } }
   ` }), [1, 'Seed', 'request']);
 });
+
+const mapFixture = `
+  symbols = { added = {}, removedOwned = 0, removedVanilla = 0, vanilla = {} }
+  local function symbol(icon, x, y)
+    if icon ~= 'House' and icon ~= 'Question' and icon ~= 'Tent' then error('unsupported icon') end
+    local item = { icon=icon, x=x, y=y, rgba=nil, anchor=nil, scale=nil }
+    function item:setRGBA(r,g,b,a) self.rgba={r,g,b,a}; return self end
+    function item:setAnchor(xa,ya) self.anchor={xa,ya}; return self end
+    function item:setScale(value) self.scale=value; return self end
+    function item:setText(value) self.text=value; return self end
+    table.insert(symbols.added, item); return item
+  end
+  local api = {
+    addTexture = function(_, icon, x, y) return symbol(icon, x, y) end,
+    removeSymbol = function(_, item)
+      for index, value in ipairs(symbols.added) do if value == item then table.remove(symbols.added, index); symbols.removedOwned = symbols.removedOwned + 1; return true end end
+      symbols.removedVanilla = symbols.removedVanilla + 1; return false
+    end
+  }
+  mapUI = { javaObject = { getAPIv3 = function() return { getSymbolsAPIv2 = function() return api end } end } }
+  vanilla = { icon='vanilla' }
+  table.insert(symbols.added, vanilla)
+`;
+
+const mapMarkers = `{
+  { id='base', category='Base', title='Camp', note='Home', icon='House', color='red', x=10, y=20, z=0, createdBy='p', createdAt=1, revision=1 },
+  { id='loot', category='Loot', title='Loot', note='', icon='Tent', color='cyan', x=30, y=40, z=0, createdBy='p', createdAt=2, revision=1 },
+  { id='bad-icon', category='Base', title='Fallback', note='', icon='Missing', color='purple', x=50, y=60, z=0, createdBy='p', createdAt=3, revision=1 }
+}`;
+
+test('map adapter fails closed without map and symbols APIs', () => {
+  assert.deepEqual(evaluateLua('local a = MapAdapter.attach({}); return a == nil', 1, { modules: ['mapAdapter'] }), [true]);
+});
+
+test('map adapter draws filtered confirmed markers with mapped style and fallback icon', () => {
+  assert.deepEqual(evaluateLua(`local a = MapAdapter.attach(mapUI); local ok = MapAdapter.rebuild(a, ${mapMarkers}, { Loot = false }); local first, second; for i = 2, #symbols.added do if symbols.added[i].x == 10 then first = symbols.added[i] else second = symbols.added[i] end end; return ok, #symbols.added, first.icon, first.x, first.y, first.rgba[1], first.rgba[2], first.rgba[3], second.icon`, 9, { modules: ['mapAdapter'], bootstrap: mapFixture }), [true, 3, 'House', 10, 20, 1, 0, 0, 'Question']);
+});
+
+test('map adapter removes only owned symbols and rebuild is idempotent', () => {
+  assert.deepEqual(evaluateLua(`local a = MapAdapter.attach(mapUI); MapAdapter.rebuild(a, ${mapMarkers}, { Loot = false }); local before = #symbols.added; MapAdapter.rebuild(a, ${mapMarkers}, { Loot = false }); return symbols.removedOwned, symbols.removedVanilla, #symbols.added, symbols.added[1] == vanilla, before == #symbols.added`, 5, { modules: ['mapAdapter'], bootstrap: mapFixture }), [2, 0, 3, true, true]);
+});
+
+test('map UI refreshes main and minimap independently from shared cache', () => {
+  assert.deepEqual(evaluateLua(`return MapUI.register(), #MapUI._adapters == 1`, 2, { modules: ['mapAdapter', 'mapUI'], bootstrap: `
+    Events = {}
+    local symbolsApi = { addTexture=function() return { setRGBA=function() end } end, removeSymbol=function() end }
+    mapUI = { javaObject = { getAPIv3 = function() return { getSymbolsAPIv2 = function() return symbolsApi end } end } }
+  ` }), [true, true]);
+});
+
+test('map UI refreshAll shares cache records while honoring independent filters', () => {
+  assert.deepEqual(evaluateLua(`
+    MapUI.setFilter('main', { Loot = false })
+    MapUI.register()
+    local ok = MapUI.refreshAll()
+    return ok, #mainSymbols.added == 1, #miniSymbols.added == 2
+  `, 3, { modules: ['mapAdapter', 'mapUI'], bootstrap: `
+    local function api(bucket)
+      return { addTexture=function(_, icon, x, y) local s={icon=icon,x=x,y=y}; table.insert(bucket.added,s); return s end, removeSymbol=function() end }
+    end
+    mainSymbols = { added={} }; miniSymbols = { added={} }
+    mapUI = { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=function() return api(mainSymbols) end } end } }
+    minimap = { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=function() return api(miniSymbols) end } end } }
+    Cache = { list=function() return {
+      { id='base', category='Base', title='B', icon='House', color='white', x=1, y=2 },
+      { id='loot', category='Loot', title='L', icon='House', color='white', x=3, y=4 }
+    } end }
+    MapUI = nil
+  ` }), [true, true, true]);
+});
