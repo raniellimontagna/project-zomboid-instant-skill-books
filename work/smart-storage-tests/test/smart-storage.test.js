@@ -260,7 +260,11 @@ function loadSmartStorage({ sandboxExpression = 'nil', modules = [], bootstrap: 
       FISHING_ROD = {}, FISHING_LINE = {}, FISHING_HOOK = {},
       HAMMER = {}, SAW = {}, SCREWDRIVER = {}, WRENCH = {},
       CROWBAR = {}, PIPE_WRENCH = {}, PRY_BAR = {}, BLOW_TORCH = {},
-      FUEL = {}, FUEL_CONTAINER = {},
+      PLASTER_BUCKET = {}, WALLPAPER_PASTE = {}, PAINTBRUSH = {},
+      HOLD_DIRT = {}, TAKE_DIRT = {}, SLEDGEHAMMER = {}, CLUB_HAMMER = {},
+      STONE_MAUL = {}, PICK_AXE = {}, CHOP_TREE = {}, DIG_PLOW = {},
+      DIG_GRAVE = {}, REMOVE_STUMP = {}, CUT_PLANT = {}, IS_CUTTING = {},
+      PETROL = {}, IS_FIRE_FUEL = {}, IS_FIRE_FUEL_SINGLE_USE = {},
     }
     assertItemTag = function(value, expected)
       if type(value) == 'string' then error('production passed a string ItemTag') end
@@ -897,9 +901,8 @@ test('Smart Storage accepts an ordinary accessible world container through the t
     destination.getParent = function() return worldObject end
     targetSquare = {
       getObjects = function() return { worldObject } end,
-      isBlockedTo = function(_, square) return square == playerSquare and false end,
-      isWindowTo = function(_, square) return square == playerSquare and false end,
     }
+    playerSquare.canReachTo = function(_, square) return square == targetSquare end
     local player = {
       getInventory = function() return source end,
       getCell = function() return { getGridSquare = function(_, x, y, z)
@@ -920,6 +923,71 @@ test('Smart Storage accepts an ordinary accessible world container through the t
     `,
   });
   assert.deepEqual(values, [1, 1, 0, 0]);
+});
+
+test('Smart Storage rejects a non-adjacent target when Build 42 reachability finds an intermediate block', () => {
+  const values = evaluateSmartStorage(`
+    local sourceItems, destinationItems = {}, {}
+    local source = {
+      getItems = function() return sourceItems end,
+      Remove = function(_, item) if sourceItems[1] == item then sourceItems[1] = nil; return true end end,
+      AddItem = function(_, item) sourceItems[1] = item; return item end,
+    }
+    local food = {
+      getCategory = function() return 'Food' end,
+      getCondition = function() return 100 end,
+      getConditionMax = function() return 100 end,
+      getContainer = function() return source end,
+    }
+    sourceItems[1] = food
+    local destination = {
+      getType = function() return 'crate' end,
+      getCapacity = function() return 10 end,
+      getContentsWeight = function() return #destinationItems end,
+      hasRoomFor = function() return true end,
+      getItems = function() return destinationItems end,
+      AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
+      Remove = function(_, item) if destinationItems[1] == item then destinationItems[1] = nil; return true end end,
+    }
+    local playerSquare = { reachCalls = 0 }
+    local targetSquare, worldObject
+    worldObject = {
+      getContainer = function() return destination end,
+      getSquare = function() return targetSquare end,
+    }
+    destination.getParent = function() return worldObject end
+    targetSquare = {
+      getObjects = function() return { worldObject } end,
+      -- These edge helpers deliberately report no local obstruction.  The
+      -- server must use canReachTo so an intermediate obstruction still wins.
+      isBlockedTo = function() return false end,
+      isWindowTo = function() return false end,
+    }
+    playerSquare.canReachTo = function(_, square)
+      playerSquare.reachCalls = playerSquare.reachCalls + 1
+      return square ~= targetSquare
+    end
+    local player = {
+      getInventory = function() return source end,
+      getCell = function() return { getGridSquare = function(_, x, y, z)
+        if x == 2 and y == 0 and z == 0 then return targetSquare end
+      end } end,
+      getX = function() return 0 end, getY = function() return 0 end, getZ = function() return 0 end,
+      getCurrentSquare = function() return playerSquare end,
+    }
+    Events.OnClientCommand.handler('SmartStorage', 'deposit', player, { category = 'Food', requestId = 'path-deny-1' })
+    return #destinationItems, #sourceItems, sent.summary.noDestination, sent.summary.failed,
+      playerSquare.reachCalls, sent.summary.moved
+  `, 6, {
+    sandboxExpression: `{ FoodContainerTypes = 'crate', SearchRadius = 3 }`,
+    modules: ['selection', 'transfer', 'server'],
+    bootstrap: `
+      Events = { OnClientCommand = { Add = function(handler) Events.OnClientCommand.handler = handler end } }
+      getTimestamp = function() return 100 end
+      sendServerCommand = function(_, _, _, summary) sent = { summary = summary } end
+    `,
+  });
+  assert.deepEqual(values, [0, 1, 1, 0, 1, 0]);
 });
 
 test('Smart Storage fails closed for unknown square access and identifiable non-world or vehicle parents', () => {
