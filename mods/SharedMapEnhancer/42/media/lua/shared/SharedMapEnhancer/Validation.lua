@@ -120,7 +120,9 @@ function Validation.isValidMarker(marker, now)
     if not C.categorySet[marker.category] then return false, "invalid_category" end
     if not C.iconSet[marker.icon] then return false, "invalid_icon" end
     if not C.colorSet[marker.color] then return false, "invalid_color" end
-    if safeString(marker.title, 1, 80) == nil or safeString(marker.note or "", 0, 240) == nil then return false, "invalid_text" end
+    if safeString(marker.title, 1, 80) == nil then return false, "invalid_text" end
+    if marker.note ~= nil and type(marker.note) ~= "string" then return false, "invalid_text" end
+    if safeString(marker.note or "", 0, 240) == nil then return false, "invalid_text" end
     if not coordinate(marker.x, nil, "X") or not coordinate(marker.y, nil, "Y") or not coordinate(marker.z, nil, "Z") then return false, "invalid_coordinates" end
     if marker.expiresAt ~= nil and (not finiteNumber(marker.expiresAt) or marker.expiresAt <= now) then return false, "expired" end
     return true, nil

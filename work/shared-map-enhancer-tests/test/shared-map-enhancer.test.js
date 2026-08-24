@@ -165,6 +165,7 @@ test('normalization handles permanent and all finite durations', () => {
 test('request shapes and marker validity reject malformed or expired values', () => {
   assert.deepEqual(evaluateLua(`local ok, r = Validation.validateRequestShape('create', ${validCreate}); local bad, br = Validation.validateRequestShape('remove', { requestId = 'x', id = 'i', extra = true }); return ok, r, bad, br`, 4, { modules: ['constants', 'validation'] }), [true, null, false, 'invalid_request']);
   assert.deepEqual(evaluateLua(`local m = ${validCreate}; m.requestId = nil; m.duration = nil; m.createdBy = 'p'; m.id = 'i'; m.createdAt = 1; m.revision = 1; m.expiresAt = 2; local ok, r = Validation.isValidMarker(m, 3); return ok, r`, 2, { modules: ['constants', 'validation'] }), [false, 'expired']);
+  assert.deepEqual(evaluateLua(`local m = ${validCreate}; m.requestId = nil; m.duration = nil; m.createdBy = 'p'; m.id = 'i'; m.createdAt = 1; m.revision = 1; m.note = false; local ok, r = Validation.isValidMarker(m, 0); return ok, r`, 2, { modules: ['constants', 'validation'] }), [false, 'invalid_text']);
 });
 
 test('normalization preserves server fields during update and enforces marker limit', () => {
