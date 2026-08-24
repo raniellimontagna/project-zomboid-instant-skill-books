@@ -295,3 +295,56 @@ test('live event adapter fails closed when absent and forwards one sanitized res
     sendServerCommand = function(_, module, command, response) sent = { module=module, command=command, response=response } end
   ` }), [true, 'SharedMapEnhancer', 'response', 'delta', 'alice', true, true]);
 });
+
+const clientFixture = `
+  sent = nil
+  sendClientCommand = function(module, command, args) sent = { module=module, command=command, args=args } end
+`;
+
+test('client cache replaces snapshots and returns sorted category-filtered copies', () => {
+  assert.deepEqual(evaluateLua(`
+    local ok, reason = Cache.reset({ revision=4, markers={
+      { id='b', category='Loot', title='B', note='', icon='Tent', color='green', x=1, y=2, z=0, createdBy='p', createdAt=20, revision=4 },
+      { id='a', category='Base', title='A', note='', icon='House', color='red', x=1, y=2, z=0, createdBy='p', createdAt=10, revision=4 }
+    } })
+    local all = Cache.list(); all[1].title = 'mutated'
+    local base = Cache.list('Base')
+    return ok, reason, Cache.revision(), #all, all[1].id, base[1].title, Cache.get('a').title
+  `, 7, { modules: ['constants', 'validation', 'cache'] }), [true, null, 4, 2, 'a', 'A', 'A']);
+});
+
+test('client cache applies contiguous deltas and rejects gaps or malformed markers', () => {
+  assert.deepEqual(evaluateLua(`
+    Cache.reset({ revision=1, markers={} })
+    local marker = { id='x', category='Base', title='X', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=2 }
+    local a, ar = Cache.applyDelta({ revision=2, operation='create', marker=marker })
+    local b, br = Cache.applyDelta({ revision=4, operation='remove', id='x' })
+    local c, cr = Cache.applyDelta({ revision=3, operation='update', marker={ id='x', category='Base', title='X', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=3, extra=true } })
+    return a, ar, b, br, c, cr, Cache.revision(), Cache.get('x') ~= nil
+  `, 8, { modules: ['constants', 'validation', 'cache'] }), [true, null, false, 'revision_gap', false, 'invalid_response', 2, true]);
+});
+
+test('client commands send exact intents with unique bounded request ids', () => {
+  assert.deepEqual(evaluateLua(`
+    ClientCommands.create({ category='Base', title='T', note='', icon='House', color='green', x=1, y=2, z=0, duration='1h', id='evil', createdBy='evil' })
+    local first = sent; ClientCommands.update('id1', { category='Loot', title='U', note='', icon='Tent', color='red', duration='permanent', x=99 })
+    local second = sent; ClientCommands.remove('id1'); local third = sent; ClientCommands.requestSnapshot(); local fourth = sent
+    return first.module, first.command, first.args.id == nil, first.args.createdBy == nil, first.args.requestId ~= second.args.requestId,
+      second.args.x == nil, third.command, fourth.command, #fourth.args.requestId >= 1, #fourth.args.requestId <= 64
+  `, 10, { modules: ['constants', 'validation', 'cache', 'clientCommands'], bootstrap: clientFixture }), ['SharedMapEnhancer', 'create', true, true, true, true, 'remove', 'request', true, true]);
+});
+
+test('client event adapter applies responses and requests snapshot after a gap', () => {
+  assert.deepEqual(evaluateLua(`
+    local reset, resetReason = Cache.reset({ revision=1, markers={} }); local registered = 0
+    return Events == nil
+  `, 1, { modules: ['constants', 'validation', 'cache', 'clientCommands'] }), [true]);
+  assert.deepEqual(evaluateLua(`
+    local reset, resetReason = Cache.reset({ revision=1, markers={} }); local m = { id='x', category='Base', title='X', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=2 }
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'delta', { revision=2, operation='create', marker=m })
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'delta', { revision=4, operation='remove', id='x' })
+    return reset, resetReason, Cache.revision(), Cache.get('x') ~= nil, sent.command
+  `, 5, { modules: ['constants', 'validation', 'cache', 'clientCommands'], bootstrap: clientFixture + `
+    Events = { OnServerCommand = { Add = function(handler) Events.OnServerCommand.handler = handler end } }
+  ` }), [true, null, 2, true, 'request']);
+});
