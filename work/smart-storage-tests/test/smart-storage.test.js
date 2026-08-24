@@ -30,6 +30,18 @@ const classifierPath = path.join(
   smartStorageRoot,
   '42/media/lua/shared/SmartStorage/Classifier.lua',
 );
+const selectionPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/shared/SmartStorage/Selection.lua',
+);
+const transferPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/server/SmartStorage/Transfer.lua',
+);
+const serverPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/server/SmartStorage/Server.lua',
+);
 
 function readMetadata(filePath) {
   return Object.fromEntries(
@@ -74,17 +86,22 @@ test('Smart Storage test package can execute Fengari Lua fixtures', () => {
   lua.lua_close(state);
 });
 
-function loadSmartStorage({ sandboxExpression = 'nil' } = {}) {
+function loadSmartStorage({ sandboxExpression = 'nil', modules = [], bootstrap: extraBootstrap = '' } = {}) {
   const state = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(state);
   const bootstrap = `
     SmartStorage = {}
     SandboxVars = { SmartStorage = ${sandboxExpression} }
+    ${extraBootstrap}
   `;
   assert.equal(lauxlib.luaL_loadstring(state, to_luastring(bootstrap)), lua.LUA_OK);
   assert.equal(lua.lua_pcall(state, 0, 0, 0), lua.LUA_OK);
 
-  for (const sourcePath of [settingsPath, classifierPath]) {
+  const sourcePaths = [settingsPath, classifierPath];
+  if (modules.includes('selection')) sourcePaths.push(selectionPath);
+  if (modules.includes('transfer')) sourcePaths.push(transferPath);
+  if (modules.includes('server')) sourcePaths.push(serverPath);
+  for (const sourcePath of sourcePaths) {
     assert.equal(
       lauxlib.luaL_loadstring(state, to_luastring(fs.readFileSync(sourcePath, 'utf8'))),
       lua.LUA_OK,
@@ -104,7 +121,10 @@ function loadSmartStorage({ sandboxExpression = 'nil' } = {}) {
 function evaluateSmartStorage(script, resultCount, options = {}) {
   const state = loadSmartStorage(options);
   assert.equal(lauxlib.luaL_loadstring(state, to_luastring(script)), lua.LUA_OK);
-  assert.equal(lua.lua_pcall(state, 0, resultCount, 0), lua.LUA_OK);
+  const status = lua.lua_pcall(state, 0, resultCount, 0);
+  assert.equal(status, lua.LUA_OK, status === lua.LUA_OK
+    ? undefined
+    : String.fromCharCode(...lua.lua_tostring(state, -1)));
   const values = [];
   for (let index = resultCount; index >= 1; index -= 1) {
     values.push(lua.lua_type(state, -index) === lua.LUA_TBOOLEAN
@@ -363,4 +383,201 @@ test('Smart Storage does not match an unknown full type with default settings', 
       (settings.FoodContainerTypes or {})['Base.UnknownDefaultItem'] == nil
   `, 3);
   assert.deepEqual(values, [true, true, true]);
+});
+
+test('Smart Storage selects the nearest compatible accessible destination deterministically', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.FoodContainerTypes = { crate = true }
+    local function container(typeName, capacity, used, access)
+      return {
+        getType = function() return typeName end,
+        getCapacity = function() return capacity end,
+        getContentsWeight = function() return used end,
+        isAccessible = function() return access end,
+      }
+    end
+    local a = container('crate', 10, 0, true)
+    local b = container('crate', 10, 0, true)
+    local rejectedType = container('counter', 10, 0, true)
+    local rejectedCapacity = container('crate', 1, 1, true)
+    local rejectedAccess = container('crate', 10, 0, false)
+    local selected = SmartStorage.Selection.choose({
+      { container = rejectedType, x = 0, y = 0, z = 0, distance = 0 },
+      { container = rejectedCapacity, x = 0, y = 0, z = 0, distance = 0 },
+      { container = rejectedAccess, x = 0, y = 0, z = 0, distance = 0 },
+      { container = b, x = 2, y = 1, z = 0, distance = 2 },
+      { container = a, x = 1, y = 2, z = 0, distance = 2 },
+    }, 'Food', settings, {})
+    return selected == a
+  `, 1, { modules: ['selection'] });
+  assert.deepEqual(values, [true]);
+});
+
+test('Smart Storage rejects destinations outside the configured radius and breaks equal distances by x y z', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.SearchRadius = 3
+    settings.FoodContainerTypes = { crate = true }
+    local function c() return {
+      getType = function() return 'crate' end,
+      getCapacity = function() return 10 end,
+      getContentsWeight = function() return 0 end,
+      isAccessible = function() return true end,
+    } end
+    local first, second, third, outside = c(), c(), c(), c()
+    local selected = SmartStorage.Selection.choose({
+      { container = outside, x = 4, y = 0, z = 0, distance = 4 },
+      { container = third, x = 1, y = 0, z = 1, distance = 2 },
+      { container = second, x = 1, y = 1, z = 0, distance = 2 },
+      { container = first, x = 1, y = 0, z = 0, distance = 2 },
+    }, 'Food', settings, {})
+    return selected == first
+  `, 1, { modules: ['selection'] });
+  assert.deepEqual(values, [true]);
+});
+
+test('Smart Storage validates request shape, rate limits, max items, duplicate IDs, and client item IDs', () => {
+  const values = evaluateSmartStorage(`
+    local player = {}
+    local valid, validReason = SmartStorage.Server.validateRequest(player, { category = 'Food', requestId = 'request-1' }, 100)
+    local rate, rateReason = SmartStorage.Server.validateRequest(player, { category = 'Food', requestId = 'request-2' }, 100)
+    local duplicate, duplicateReason = SmartStorage.Server.validateRequest(player, { category = 'Food', requestId = 'request-1' }, 102)
+    local hostile, hostileReason = SmartStorage.Server.validateRequest(player, { category = 'Food', requestId = 'request-3', itemIds = { 7 } }, 102)
+    local tooMany, tooManyReason = SmartStorage.Server.validateRequest({}, {
+      category = 'Food', requestId = 'request-4', maxItems = 201,
+    }, 100)
+    local disabled, disabledReason = SmartStorage.Server.validateRequest({}, { category = 'Weapons', requestId = 'request-5' }, 100)
+    return valid ~= nil, validReason == nil,
+      rate == nil, rateReason,
+      duplicate == nil, duplicateReason,
+      hostile == nil, hostileReason,
+      tooMany == nil, tooManyReason,
+      disabled == nil, disabledReason
+  `, 12, { modules: ['server'] });
+  assert.deepEqual(values, [
+    true, true, true, 'rate_limited', true, 'duplicate', true, 'client_item_ids',
+    true, 'invalid_request', true, 'disabled_category',
+  ]);
+});
+
+test('Smart Storage revalidates each transfer and returns deterministic outcome counts', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.FoodContainerTypes = { crate = true }
+    local sourceItems = {}
+    local source = {
+      Remove = function(_, item)
+        for index = 1, #sourceItems do
+          if sourceItems[index] == item then table.remove(sourceItems, index); return true end
+        end
+        return false
+      end,
+    }
+    local destinationItems = {}
+    local destination = {
+      getType = function() return 'crate' end,
+      getCapacity = function() return 10 end,
+      getContentsWeight = function() return #destinationItems end,
+      isAccessible = function() return true end,
+      AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
+    }
+    local function item(category, favorite)
+      local result = {
+        getCategory = function() return category end,
+        getCondition = function() return 100 end,
+        getConditionMax = function() return 100 end,
+        isFavorite = function() return favorite end,
+        getContainer = function() return source end,
+      }
+      sourceItems[#sourceItems + 1] = result
+      return result
+    end
+    local allowed = item('Food', false)
+    local protected = item('Food', true)
+    local mismatched = item('Weapon', false)
+    local summary = SmartStorage.Transfer.deposit({}, {
+      category = 'Food', settings = settings, items = { allowed, protected, mismatched },
+      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+      requestId = 'transfer-1',
+    })
+    return summary.moved, summary.protected, summary.noDestination, summary.failed,
+      #destinationItems, sourceItems[1] == protected
+  `, 6, { modules: ['selection', 'transfer'] });
+  assert.deepEqual(values, [1, 1, 0, 1, 1, true]);
+});
+
+test('Smart Storage server handler only moves player-owned bag items and caps each request', () => {
+  const values = evaluateSmartStorage(`
+    local rootItems, bagItems, destinationItems = {}, {}, {}
+    local source = { getItems = function() return rootItems end }
+    local bag = { getItems = function() return bagItems end }
+    local food = {
+      getCategory = function() return 'Food' end,
+      getCondition = function() return 100 end,
+      getConditionMax = function() return 100 end,
+      getContainer = function() return bag end,
+    }
+    local bagItem = { getCategory = function() return 'Other' end, getInventory = function() return bag end }
+    rootItems[1], bagItems[1] = bagItem, food
+    bag.Remove = function(_, item) if item == food then bagItems[1] = nil; return true end end
+    local destination = {
+      getType = function() return 'crate' end,
+      getCapacity = function() return 10 end,
+      getContentsWeight = function() return #destinationItems end,
+      isAccessible = function() return true end,
+      AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
+    }
+    local worldObject = { getContainer = function() return destination end }
+    local square = { getObjects = function() return { worldObject } end }
+    local player = {
+      getInventory = function() return source end,
+      getCell = function() return { getGridSquare = function(_, x, y, z)
+        if x == 0 and y == 0 and z == 0 then return square end
+      end } end,
+      getX = function() return 0 end, getY = function() return 0 end, getZ = function() return 0 end,
+    }
+    Events.OnClientCommand.handler('SmartStorage', 'deposit', player, { category = 'Food', requestId = 'owned-1' })
+    return #destinationItems, sent.module, sent.command, sent.summary.moved,
+      sent.summary.protected, sent.summary.noDestination, sent.summary.failed
+  `, 7, {
+    sandboxExpression: `{ FoodContainerTypes = 'crate', MaxItemsPerRequest = 1 }`,
+    modules: ['selection', 'transfer', 'server'],
+    bootstrap: `
+      Events = { OnClientCommand = { Add = function(handler) Events.OnClientCommand.handler = handler end } }
+      getTimestamp = function() return 100 end
+      sendServerCommand = function(player, module, command, summary)
+        sent = { player = player, module = module, command = command, summary = summary }
+      end
+    `,
+  });
+  assert.deepEqual(values, [1, 'SmartStorage', 'result', 1, 0, 0, 0]);
+});
+
+test('Smart Storage fails closed when an item leaves the server-enumerated inventory before transfer', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.FoodContainerTypes = { crate = true }
+    local source = { Remove = function() return true end }
+    local destinationItems = {}
+    local destination = {
+      getType = function() return 'crate' end,
+      getCapacity = function() return 10 end,
+      getContentsWeight = function() return #destinationItems end,
+      isAccessible = function() return true end,
+      AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
+    }
+    local item = {
+      getCategory = function() return 'Food' end,
+      getCondition = function() return 100 end,
+      getConditionMax = function() return 100 end,
+      getContainer = function() return source end,
+    }
+    local summary = SmartStorage.Transfer.deposit({}, {
+      category = 'Food', requestId = 'owned-2', settings = settings, items = { item }, owned = {},
+      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+    })
+    return summary.moved, summary.failed, #destinationItems
+  `, 3, { modules: ['selection', 'transfer'] });
+  assert.deepEqual(values, [0, 1, 0]);
 });
