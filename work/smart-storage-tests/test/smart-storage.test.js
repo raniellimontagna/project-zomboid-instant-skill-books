@@ -256,7 +256,8 @@ function loadSmartStorage({ sandboxExpression = 'nil', modules = [], bootstrap: 
     SmartStorage = {}
     SandboxVars = { SmartStorage = ${sandboxExpression} }
     ItemTag = {
-      AMMO = {}, IS_SEED = {}, FERTILIZER = {}, COMPOST = {},
+      AMMO = {}, PISTOL_MAGAZINE = {}, RIFLE_MAGAZINE = {}, SHOTGUN_SHELL = {},
+      IS_SEED = {}, FERTILIZER = {}, COMPOST = {},
       FISHING_ROD = {}, FISHING_LINE = {}, FISHING_HOOK = {},
       HAMMER = {}, SAW = {}, SCREWDRIVER = {}, WRENCH = {},
       CROWBAR = {}, PIPE_WRENCH = {}, PRY_BAR = {}, BLOW_TORCH = {},
@@ -494,6 +495,40 @@ test('Smart Storage passes B42 ItemTag tokens to hasTag', () => {
     return SmartStorage.Classifier.classify(item, settings)
   `, 1);
   assert.deepEqual(values, ['Ammo']);
+});
+
+test('Smart Storage classifies official magazine and cartridge ItemTags without AMMO', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.Ammo = true
+    local officialTags = {
+      ItemTag.AMMO,
+      ItemTag.PISTOL_MAGAZINE,
+      ItemTag.RIFLE_MAGAZINE,
+      ItemTag.SHOTGUN_SHELL,
+    }
+    local function tagged(expected)
+      return {
+        hasTag = function(_, tag)
+          local known = false
+          for index = 1, #officialTags do
+            if tag == officialTags[index] then known = true end
+          end
+          if not known then error('classifier passed an invented ammo ItemTag') end
+          return tag == expected
+        end,
+      }
+    end
+    local ammo = tagged(ItemTag.AMMO)
+    local pistolMagazine = tagged(ItemTag.PISTOL_MAGAZINE)
+    local rifleMagazine = tagged(ItemTag.RIFLE_MAGAZINE)
+    local shotgunShell = tagged(ItemTag.SHOTGUN_SHELL)
+    return SmartStorage.Classifier.classify(ammo, settings),
+      SmartStorage.Classifier.classify(pistolMagazine, settings),
+      SmartStorage.Classifier.classify(rifleMagazine, settings),
+      SmartStorage.Classifier.classify(shotgunShell, settings)
+  `, 4);
+  assert.deepEqual(values, ['Ammo', 'Ammo', 'Ammo', 'Ammo']);
 });
 
 test('Smart Storage uses official fuel and construction ItemTag signals', () => {

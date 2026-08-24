@@ -34,7 +34,7 @@ local itemTagNames = {
         "PICK_AXE", "CHOP_TREE", "DIG_PLOW", "DIG_GRAVE", "REMOVE_STUMP",
         "CUT_PLANT", "IS_CUTTING",
     },
-    Ammo = { "AMMO" },
+    Ammo = { "AMMO", "PISTOL_MAGAZINE", "RIFLE_MAGAZINE", "SHOTGUN_SHELL" },
     Fuel = { "PETROL", "IS_FIRE_FUEL", "IS_FIRE_FUEL_SINGLE_USE" },
     Farming = { "IS_SEED", "FERTILIZER", "COMPOST" },
     Fishing = { "FISHING_ROD", "FISHING_LINE", "FISHING_HOOK" },
