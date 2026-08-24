@@ -62,6 +62,14 @@ local function hasCapacity(candidate, container)
     return value < capacity
 end
 
+function Selection.canAccept(container, character, item)
+    if container == nil or item == nil then
+        return false
+    end
+    local ok, value = call(container, "hasRoomFor", character, item)
+    return ok and value == true
+end
+
 local function compatible(candidate, category, settings, character)
     local container = candidateContainer(candidate)
     if container == nil or type(settings) ~= "table" or type(category) ~= "string" then

@@ -27,7 +27,7 @@ local function isValidItem(player, item, request)
     if SmartStorage.Classifier == nil or SmartStorage.Protection == nil then
         return false, "failed"
     end
-    if not SmartStorage.Classifier.matches(item, request.category, request.settings) then
+    if SmartStorage.Classifier.classify(item, request.settings) ~= request.category then
         return false, "failed"
     end
     local allowed = SmartStorage.Protection.check(item, player, request.settings)
@@ -37,23 +37,73 @@ local function isValidItem(player, item, request)
     return true, nil
 end
 
-local function move(item, destination)
+local function contains(container, item)
+    local ok, items = call(container, "getItems")
+    if not ok then return false end
+    if type(items) == "table" then
+        for index = 1, #items do
+            if items[index] == item then return true end
+        end
+        return false
+    end
+    local sizeOk, size = call(items, "size")
+    if not sizeOk or type(size) ~= "number" or size < 0 then return false end
+    for index = 0, size - 1 do
+        local itemOk, value = call(items, "get", index)
+        if not itemOk then return false end
+        if value == item then return true end
+    end
+    return false
+end
+
+local function hasMethod(value, name)
+    local ok, method = pcall(function() return value[name] end)
+    return ok and type(method) == "function"
+end
+
+local function successfulCall(value, name, ...)
+    local ok, returned = call(value, name, ...)
+    return ok and returned ~= false
+end
+
+local function restore(item, source, destination)
+    if contains(destination, item) then
+        if not hasMethod(destination, "Remove") or not successfulCall(destination, "Remove", item)
+            or contains(destination, item) then
+            return false
+        end
+    end
+    return hasMethod(source, "AddItem") and successfulCall(source, "AddItem", item)
+        and contains(source, item)
+end
+
+local function move(player, item, destination)
     local ok, source = call(item, "getContainer")
-    if not ok or source == nil then
+    if not ok or source == nil or not contains(source, item)
+        or not SmartStorage.Selection or not SmartStorage.Selection.canAccept(destination, player, item) then
+        return false
+    end
+    -- Validate the full existing-item transaction surface before removal.  If
+    -- the add cannot prove its postcondition, rollback uses the same existing
+    -- item overload and is verified before reporting failure.
+    if not hasMethod(source, "Remove") or not hasMethod(source, "AddItem")
+        or not hasMethod(destination, "AddItem") or not hasMethod(destination, "Remove") then
         return false
     end
 
     -- ItemContainer:Remove(InventoryItem) and AddItem(InventoryItem) are the
     -- vanilla object-transfer calls.  Passing the existing item object avoids
     -- the string overload which creates an item.
-    ok = call(source, "Remove", item)
-    if not ok then
+    local removed = successfulCall(source, "Remove", item)
+    if not removed or contains(source, item) then
+        -- A buggy/container-side failure can report false after it has already
+        -- detached the object.  Restore the existing object before reporting
+        -- failure so a failed remove cannot lose it.
+        if not contains(source, item) then restore(item, source, destination) end
         return false
     end
-    ok = call(destination, "AddItem", item)
-    if not ok then
-        -- Fail closed.  There is no safe generic rollback adapter for an
-        -- unknown B42 container implementation.
+    if not successfulCall(destination, "AddItem", item) or not contains(destination, item) then
+        restore(item, source, destination)
         return false
     end
     call(source, "setDrawDirty", true)
@@ -84,13 +134,13 @@ function Transfer.deposit(player, request)
             local destination = SmartStorage.Selection and SmartStorage.Selection.choose(
                 request.candidates, request.category, request.settings, player
             )
-            if destination == nil then
+            if destination == nil or not SmartStorage.Selection.canAccept(destination, player, item) then
                 summary.noDestination = summary.noDestination + 1
             else
                 local sourceOk, source = call(item, "getContainer")
                 if request.owned ~= nil and (not sourceOk or request.owned[source] ~= true) then
                     summary.failed = summary.failed + 1
-                elseif move(item, destination) then
+                elseif move(player, item, destination) then
                     summary.moved = summary.moved + 1
                 else
                     summary.failed = summary.failed + 1

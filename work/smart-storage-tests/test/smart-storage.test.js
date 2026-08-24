@@ -467,12 +467,14 @@ test('Smart Storage revalidates each transfer and returns deterministic outcome 
     settings.FoodContainerTypes = { crate = true }
     local sourceItems = {}
     local source = {
+      getItems = function() return sourceItems end,
       Remove = function(_, item)
         for index = 1, #sourceItems do
           if sourceItems[index] == item then table.remove(sourceItems, index); return true end
         end
         return false
       end,
+      AddItem = function(_, item) sourceItems[#sourceItems + 1] = item; return item end,
     }
     local destinationItems = {}
     local destination = {
@@ -480,7 +482,15 @@ test('Smart Storage revalidates each transfer and returns deterministic outcome 
       getCapacity = function() return 10 end,
       getContentsWeight = function() return #destinationItems end,
       isAccessible = function() return true end,
+      hasRoomFor = function() return true end,
+      getItems = function() return destinationItems end,
       AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
+      Remove = function(_, item)
+        for index = 1, #destinationItems do
+          if destinationItems[index] == item then table.remove(destinationItems, index); return true end
+        end
+        return false
+      end,
     }
     local function item(category, favorite)
       local result = {
@@ -521,12 +531,21 @@ test('Smart Storage server handler only moves player-owned bag items and caps ea
     local bagItem = { getCategory = function() return 'Other' end, getInventory = function() return bag end }
     rootItems[1], bagItems[1] = bagItem, food
     bag.Remove = function(_, item) if item == food then bagItems[1] = nil; return true end end
+    bag.AddItem = function(_, item) bagItems[#bagItems + 1] = item; return item end
     local destination = {
       getType = function() return 'crate' end,
       getCapacity = function() return 10 end,
       getContentsWeight = function() return #destinationItems end,
       isAccessible = function() return true end,
+      hasRoomFor = function() return true end,
+      getItems = function() return destinationItems end,
       AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
+      Remove = function(_, item)
+        for index = 1, #destinationItems do
+          if destinationItems[index] == item then table.remove(destinationItems, index); return true end
+        end
+        return false
+      end,
     }
     local worldObject = { getContainer = function() return destination end }
     local square = { getObjects = function() return { worldObject } end }
@@ -558,13 +577,15 @@ test('Smart Storage fails closed when an item leaves the server-enumerated inven
   const values = evaluateSmartStorage(`
     local settings = SmartStorage.Settings.read()
     settings.FoodContainerTypes = { crate = true }
-    local source = { Remove = function() return true end }
+    local sourceItems = {}
+    local source = { getItems = function() return sourceItems end, Remove = function() return true end }
     local destinationItems = {}
     local destination = {
       getType = function() return 'crate' end,
       getCapacity = function() return 10 end,
       getContentsWeight = function() return #destinationItems end,
       isAccessible = function() return true end,
+      hasRoomFor = function() return true end,
       AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
     }
     local item = {
@@ -573,6 +594,7 @@ test('Smart Storage fails closed when an item leaves the server-enumerated inven
       getConditionMax = function() return 100 end,
       getContainer = function() return source end,
     }
+    sourceItems[1] = item
     local summary = SmartStorage.Transfer.deposit({}, {
       category = 'Food', requestId = 'owned-2', settings = settings, items = { item }, owned = {},
       candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
@@ -580,4 +602,151 @@ test('Smart Storage fails closed when an item leaves the server-enumerated inven
     return summary.moved, summary.failed, #destinationItems
   `, 3, { modules: ['selection', 'transfer'] });
   assert.deepEqual(values, [0, 1, 0]);
+});
+
+test('Smart Storage rejects unknown and hostile request fields', () => {
+  const values = evaluateSmartStorage(`
+    local player = {}
+    local extra, extraReason = SmartStorage.Server.validateRequest(player, {
+      category = 'Food', requestId = 'shape-1', unexpected = true,
+    }, 100)
+    local hostile = setmetatable({ category = 'Food', requestId = 'shape-2' }, {
+      __pairs = function() error('untrusted network table') end,
+    })
+    local hostileRequest, hostileReason = SmartStorage.Server.validateRequest({}, hostile, 100)
+    local virtual = setmetatable({ category = 'Food', requestId = 'shape-3' }, {
+      __index = function(_, key) if key == 'containerId' then return 99 end end,
+    })
+    local virtualRequest, virtualReason = SmartStorage.Server.validateRequest({}, virtual, 100)
+    return extra == nil, extraReason, hostileRequest == nil, hostileReason,
+      virtualRequest == nil, virtualReason
+  `, 6, { modules: ['server'] });
+  assert.deepEqual(values, [true, 'invalid_request', true, 'invalid_request', true, 'invalid_request']);
+});
+
+test('Smart Storage refuses no-op removals and restores an existing item after a failed add', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.FoodContainerTypes = { crate = true }
+    local function destination(add)
+      local items = {}
+      return {
+        items = items,
+        getType = function() return 'crate' end,
+        getCapacity = function() return 10 end,
+        getContentsWeight = function() return #items end,
+        isAccessible = function() return true end,
+        hasRoomFor = function() return true end,
+        getItems = function() return items end,
+        AddItem = add,
+        Remove = function(_, item)
+          for index = 1, #items do if items[index] == item then table.remove(items, index); item.container = nil; return true end end
+          return false
+        end,
+      }
+    end
+    local function item(source)
+      return {
+        container = source,
+        getCategory = function() return 'Food' end,
+        getCondition = function() return 100 end,
+        getConditionMax = function() return 100 end,
+        getContainer = function(self) return self.container end,
+      }
+    end
+    local noOpItems = {}
+    local noOpSource
+    noOpSource = {
+      getItems = function() return noOpItems end,
+      Remove = function() return true end,
+      AddItem = function(_, value) noOpItems[#noOpItems + 1] = value; value.container = noOpSource; return value end,
+    }
+    local noOpItem = item(noOpSource); noOpItems[1] = noOpItem
+    local noOpDestination = destination(function(self, value) self.items[#self.items + 1] = value; value.container = self; return value end)
+    local noOp = SmartStorage.Transfer.deposit({}, {
+      category = 'Food', settings = settings, items = { noOpItem }, owned = { [noOpSource] = true },
+      candidates = { { container = noOpDestination, x = 0, y = 0, z = 0, distance = 0 } },
+    })
+    local failedRemoveItems = {}
+    local failedRemoveSource
+    failedRemoveSource = {
+      getItems = function() return failedRemoveItems end,
+      Remove = function(_, value) table.remove(failedRemoveItems, 1); value.container = nil; return false end,
+      AddItem = function(_, value) failedRemoveItems[#failedRemoveItems + 1] = value; value.container = failedRemoveSource; return value end,
+    }
+    local failedRemoveItem = item(failedRemoveSource); failedRemoveItems[1] = failedRemoveItem
+    local failedRemoveDestination = destination(function(self, value) self.items[#self.items + 1] = value; value.container = self; return value end)
+    local failedRemove = SmartStorage.Transfer.deposit({}, {
+      category = 'Food', settings = settings, items = { failedRemoveItem }, owned = { [failedRemoveSource] = true },
+      candidates = { { container = failedRemoveDestination, x = 0, y = 0, z = 0, distance = 0 } },
+    })
+    local failedItems = {}
+    local failedSource
+    failedSource = {
+      getItems = function() return failedItems end,
+      Remove = function(_, value) table.remove(failedItems, 1); value.container = nil; return true end,
+      AddItem = function(_, value) failedItems[#failedItems + 1] = value; value.container = failedSource; return value end,
+    }
+    local failedItem = item(failedSource); failedItems[1] = failedItem
+    local failedDestination = destination(function() return false end)
+    local failed = SmartStorage.Transfer.deposit({}, {
+      category = 'Food', settings = settings, items = { failedItem }, owned = { [failedSource] = true },
+      candidates = { { container = failedDestination, x = 0, y = 0, z = 0, distance = 0 } },
+    })
+    return noOp.moved, noOp.failed, #noOpItems, #noOpDestination.items,
+      failedRemove.moved, failedRemove.failed, #failedRemoveItems, #failedRemoveDestination.items, failedRemoveItem.container == failedRemoveSource,
+      failed.moved, failed.failed, #failedItems, #failedDestination.items, failedItem.container == failedSource
+  `, 14, { modules: ['selection', 'transfer'] });
+  assert.deepEqual(values, [0, 1, 1, 0, 0, 1, 1, 0, true, 0, 1, 1, 0, true]);
+});
+
+test('Smart Storage checks item-aware capacity and priority classification before transfer', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.Ammo = true
+    settings.CategoryPriority = { 'Ammo', 'Food' }
+    settings.FoodContainerTypes = { crate = true }
+    local sourceItems = {}
+    local source = {
+      getItems = function() return sourceItems end,
+      Remove = function(_, value) table.remove(sourceItems, 1); value.container = nil; return true end,
+      AddItem = function(_, value) sourceItems[#sourceItems + 1] = value; value.container = source; return value end,
+    }
+    local destinationItems = {}
+    local destination = {
+      getType = function() return 'crate' end,
+      getCapacity = function() return 100 end,
+      getContentsWeight = function() return 0 end,
+      isAccessible = function() return true end,
+      hasRoomFor = function(_, player, value) return value.heavy ~= true end,
+      getItems = function() return destinationItems end,
+      AddItem = function(_, value) destinationItems[#destinationItems + 1] = value; value.container = destination; return value end,
+      Remove = function() return false end,
+    }
+    local function item(heavy, ammo)
+      local value = {
+        container = source, heavy = heavy,
+        getCategory = function() return 'Food' end,
+        hasTag = function(_, tag) return ammo and tag == 'AMMO' end,
+        getCondition = function() return 100 end,
+        getConditionMax = function() return 100 end,
+        getContainer = function(self) return self.container end,
+      }
+      sourceItems[#sourceItems + 1] = value
+      return value
+    end
+    local heavy = item(true, false)
+    local overlap = item(false, true)
+    local heavySummary = SmartStorage.Transfer.deposit({}, {
+      category = 'Food', settings = settings, items = { heavy }, owned = { [source] = true },
+      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+    })
+    local overlapSummary = SmartStorage.Transfer.deposit({}, {
+      category = 'Food', settings = settings, items = { overlap }, owned = { [source] = true },
+      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+    })
+    return heavySummary.moved, heavySummary.noDestination, overlapSummary.moved, overlapSummary.failed,
+      #sourceItems, #destinationItems
+  `, 6, { modules: ['selection', 'transfer'] });
+  assert.deepEqual(values, [0, 1, 0, 1, 2, 0]);
 });

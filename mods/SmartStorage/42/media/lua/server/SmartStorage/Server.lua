@@ -50,14 +50,25 @@ function Server.validateRequest(player, args, now)
         or type(now) ~= "number" then
         return nil, "invalid_request"
     end
-    if args.itemIds ~= nil or args.items ~= nil or args.container ~= nil or args.containerId ~= nil
-        or args.destination ~= nil or args.destinationId ~= nil then
-        return nil, "client_item_ids"
-    end
-    if args.maxItems ~= nil then
+    if getmetatable(args) ~= nil then
         return nil, "invalid_request"
     end
-    if type(args.category) ~= "string" or not validRequestId(args.requestId) then
+    local shapeOk, shapeReason = pcall(function()
+        local seen = {}
+        for key in pairs(args) do
+            if key == "itemIds" or key == "items" or key == "container" or key == "containerId"
+                or key == "destination" or key == "destinationId" then
+                return "client_item_ids"
+            end
+            if (key ~= "category" and key ~= "requestId") or seen[key] then
+                error("invalid shape")
+            end
+            seen[key] = true
+        end
+        if seen.category ~= true or seen.requestId ~= true then error("missing shape") end
+    end)
+    if not shapeOk or shapeReason ~= nil or type(args.category) ~= "string" or not validRequestId(args.requestId) then
+        if shapeReason == "client_item_ids" then return nil, shapeReason end
         return nil, "invalid_request"
     end
     local settings = SmartStorage.Settings and SmartStorage.Settings.read()
@@ -168,7 +179,7 @@ local function handle(module, command, player, args)
     -- each mutation.
     local classified = {}
     for index = 1, #items do
-        if SmartStorage.Classifier and SmartStorage.Classifier.matches(items[index], request.category, request.settings) then
+        if SmartStorage.Classifier and SmartStorage.Classifier.classify(items[index], request.settings) == request.category then
             classified[#classified + 1] = items[index]
         end
     end
