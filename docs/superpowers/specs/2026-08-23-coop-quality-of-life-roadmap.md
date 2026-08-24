@@ -22,11 +22,11 @@ Make it faster to organize nearby storage without scanning the whole base or mov
 
 ### MVP scope
 
-- Configure storage containers by individual name, such as `Comida`, `Ferramentas`, `Medicamentos`, and `Construção`.
+- Configure eligible nearby destination containers by verified vanilla container type for each category.
 - Provide a **Deposit compatible items** action from the player inventory/context menu.
 - Search only the player's inventory and explicitly eligible nearby containers.
 - Keep equipped, favourite, low-durability, and otherwise protected items in place.
-- Support optional category matching as a fallback to explicit container names.
+- Classify items by explicit full-type allowlists, vanilla tags, and exact vanilla categories, with configured category priority for overlaps.
 - Show a concise result: moved items, skipped protected items, and items with no matching container.
 - Validate item ownership, location, capacity, and destination on the server before moving anything.
 
