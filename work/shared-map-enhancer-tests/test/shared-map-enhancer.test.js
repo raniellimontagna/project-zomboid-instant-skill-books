@@ -14,12 +14,50 @@ const readMetadata = (filePath) => Object.fromEntries(
   }),
 );
 
-// Kept as the contract seam for the Lua modules added by later tasks.
+const luaRoot = path.join(repositoryRoot, 'mods/SharedMapEnhancer/42/media/lua');
+
+function luaError(state, fallback) {
+  return lua.lua_tojsstring(state, -1) || fallback;
+}
+
+function luaFiles(rootPath) {
+  return fs.readdirSync(rootPath, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(rootPath, entry.name);
+    return entry.isDirectory() ? luaFiles(entryPath) : [entryPath];
+  }).filter((filePath) => path.extname(filePath).toLowerCase() === '.lua');
+}
+
+function resolveLuaModule(moduleName) {
+  assert.equal(typeof moduleName, 'string', 'Lua module name must be a string');
+  const normalized = moduleName.replace(/\\/g, '/').replace(/\.lua$/i, '').toLowerCase();
+  const matches = luaFiles(luaRoot).filter((filePath) => {
+    const relative = path.relative(luaRoot, filePath).replace(/\\/g, '/').replace(/\.lua$/i, '').toLowerCase();
+    return relative === normalized || path.posix.basename(relative) === normalized;
+  });
+  assert.equal(matches.length, 1, matches.length === 0
+    ? `Unknown Shared Map Enhancer Lua module: ${moduleName}`
+    : `Ambiguous Shared Map Enhancer Lua module: ${moduleName}`);
+  return matches[0];
+}
+
+// Loads selected source files into one shared Fengari state for later task contracts.
 function loadSharedMapEnhancer({ modules = [], bootstrap = '' } = {}) {
   const state = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(state);
   assert.equal(lauxlib.luaL_loadstring(state, to_luastring(bootstrap)), lua.LUA_OK);
-  assert.equal(lua.lua_pcall(state, 0, 0, 0), lua.LUA_OK);
+  if (lua.lua_pcall(state, 0, 0, 0) !== lua.LUA_OK) {
+    throw new Error(`Shared Map Enhancer bootstrap failed: ${luaError(state, 'unknown error')}`);
+  }
+  for (const moduleName of modules) {
+    const sourcePath = resolveLuaModule(moduleName);
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    if (lauxlib.luaL_loadstring(state, to_luastring(source)) !== lua.LUA_OK) {
+      throw new Error(`Shared Map Enhancer module ${moduleName} failed to load: ${luaError(state, 'unknown error')}`);
+    }
+    if (lua.lua_pcall(state, 0, 0, 0) !== lua.LUA_OK) {
+      throw new Error(`Shared Map Enhancer module ${moduleName} failed at runtime: ${luaError(state, 'unknown error')}`);
+    }
+  }
   return { state, modules };
 }
 
@@ -65,4 +103,11 @@ test('test harness is private CommonJS with the required script and Fengari', ()
   assert.equal(pkg.scripts.test, 'node --test');
   assert.deepEqual(pkg.devDependencies, { fengari: '0.1.4' });
   assert.equal(typeof loadSharedMapEnhancer, 'function');
+});
+
+test('selected Lua modules load into the shared Fengari state', () => {
+  const { state } = loadSharedMapEnhancer({ modules: ['TestFixture'] });
+  assert.equal(lauxlib.luaL_loadstring(state, to_luastring('return SharedMapEnhancerTestFixture')), lua.LUA_OK);
+  assert.equal(lua.lua_pcall(state, 0, 1, 0), lua.LUA_OK);
+  assert.equal(lua.lua_tojsstring(state, -1), 'loaded');
 });
