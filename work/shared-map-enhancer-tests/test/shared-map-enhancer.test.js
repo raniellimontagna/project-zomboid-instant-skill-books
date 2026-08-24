@@ -257,3 +257,41 @@ test('administrator may remove another player marker', () => {
     return removed.kind, removed.operation, Persistence.get(created.marker.id) == nil
   `, 3, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture }), ['delta', 'remove', true]);
 });
+
+test('idempotency eviction is bounded, deterministic, and isolated per player', () => {
+  assert.deepEqual(evaluateLua(`
+    local valid = { requestId='old', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='permanent' }
+    local first = Server.validateAndHandle('create', player, valid, 100)
+    for i = 1, 256 do Server.validateAndHandle('request', player, { requestId='q' .. i }, 200 + i) end
+    local replayOld = Server.validateAndHandle('create', player, valid, 1000)
+    local replayRecent = Server.validateAndHandle('request', player, { requestId='q256' }, 1001)
+    local other = { getUsername=function() return 'bob' end, isAdmin=function() return false end }
+    local otherResult = Server.validateAndHandle('request', other, { requestId='q256' }, 1001)
+    return first.marker.id ~= replayOld.marker.id, Persistence.revision() == 2, replayRecent.kind, otherResult.kind
+  `, 4, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture }), [true, true, 'snapshot', 'snapshot']);
+});
+
+test('cleanup removes expired markers and transmits one revision', () => {
+  assert.deepEqual(evaluateLua(`
+    local r = ModData.getOrCreate('SharedMapEnhancer')
+    r.markers.expired = { id='expired', category='Base', title='Old', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, expiresAt=50, revision=1 }
+    Persistence.load(0)
+    local before = Persistence.revision()
+    local changed = Persistence.cleanup(100)
+    return changed, Persistence.get('expired') == nil, Persistence.revision() == before + 1, ModData.lastTransmit
+  `, 4, { modules: ['constants', 'validation', 'persistence'], bootstrap: serverFixture }), [true, true, true, 'SharedMapEnhancer']);
+});
+
+test('live event adapter fails closed when absent and forwards one sanitized response when present', () => {
+  assert.deepEqual(evaluateLua(`
+    return Events == nil, sendServerCommand == nil
+  `, 2, { modules: ['constants', 'validation', 'persistence', 'server'] }), [true, true]);
+  assert.deepEqual(evaluateLua(`
+    Events.OnClientCommand.handler('SharedMapEnhancer', 'create', player, { requestId='evt1', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='permanent' })
+    return registered == 1, sent.module, sent.command, sent.response.kind, sent.response.marker.createdBy, type(sent.response.marker.createdAt) == 'number', sent.response.marker.revision == 1
+  `, 7, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture + `
+    registered = 0; sent = nil
+    Events = { OnClientCommand = { Add = function(handler) registered = registered + 1; Events.OnClientCommand.handler = handler end } }
+    sendServerCommand = function(_, module, command, response) sent = { module=module, command=command, response=response } end
+  ` }), [true, 'SharedMapEnhancer', 'response', 'delta', 'alice', true, true]);
+});
