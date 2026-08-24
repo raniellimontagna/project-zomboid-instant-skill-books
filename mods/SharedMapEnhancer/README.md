@@ -2,6 +2,8 @@
 
 Shared Map Enhancer is a standalone Project Zomboid Build **42.20+** mod for small cooperative sessions. It synchronizes categorized map markers while keeping every state-changing operation server-authoritative: clients send intent and display only server-confirmed snapshots and deltas.
 
+![Shared Map Enhancer cover](../../docs/assets/shared-map-enhancer-cover.png)
+
 ## Local installation and release package
 
 Copy the contents of `outputs/SharedMapEnhancer-0.1.0.zip` (the `SharedMapEnhancer/42/` tree) into the server's `mods/` directory and install the same source on every client. Enable it on the server with exactly:

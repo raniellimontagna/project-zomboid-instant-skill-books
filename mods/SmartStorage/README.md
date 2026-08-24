@@ -2,6 +2,8 @@
 
 Smart Storage is a Project Zomboid Build 42.20+ multiplayer mod for small cooperative sessions. It adds **Depositar itens compatíveis** to the inventory context menu and lets the server move eligible player-owned items into compatible nearby containers.
 
+![Smart Storage cover](../../docs/assets/smart-storage-cover.png)
+
 ## Identity and compatibility
 
 ```text

@@ -4,6 +4,12 @@ This repository is a multi-mod Project Zomboid Build 42 workspace. Each mod has 
 
 ## Available mods
 
+<p align="center">
+  <img src="docs/assets/instant-skill-books-cover.png" alt="Instant Skill Books cover" width="32%">
+  <img src="docs/assets/smart-storage-cover.png" alt="Smart Storage cover" width="32%">
+  <img src="docs/assets/shared-map-enhancer-cover.png" alt="Shared Map Enhancer cover" width="32%">
+</p>
+
 | Mod | Version | Guide | Status |
 | --- | --- | --- | --- |
 | [Instant Skill Books](mods/InstantSkillBooks/README.md) | 2.0.0 | [Install and configuration](mods/InstantSkillBooks/README.md) | Published on Steam Workshop (`3786090811`) |
