@@ -110,10 +110,11 @@ end
 local function canRestoreOriginal(item, destination, before)
     if contains(destination, item) then return true end
     local after = snapshot(destination)
-    -- If the destination was empty and remains empty, the failed add cannot
-    -- have merged into a pre-existing stack.  Any non-empty unchanged snapshot
-    -- is ambiguous, so leave it untouched rather than duplicate a merge.
-    return before ~= nil and before.count == 0 and unchanged(before, after)
+    -- A no-op/failed add leaves the object-identity snapshot unchanged even
+    -- when the destination already has stacks.  A successful stack merge is
+    -- handled earlier by its returned, contained destination stack and never
+    -- reaches this rollback branch.
+    return before ~= nil and unchanged(before, after)
 end
 
 local function move(player, item, destination)
