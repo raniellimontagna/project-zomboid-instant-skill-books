@@ -33,6 +33,13 @@ local defaults = {
     LowConditionPercent = 25,
 }
 
+local defaultContainerTypes = {
+    Food = "crate",
+    Tools = "crate",
+    Medicine = "crate",
+    Construction = "crate",
+}
+
 local function trim(value)
     return (value:gsub("^%s*(.-)%s*$", "%1"))
 end
@@ -50,6 +57,14 @@ function Settings.parseList(value)
         end
     end
     return result
+end
+
+local function readList(source, key, defaultValue)
+    local value = source[key]
+    if value == nil then
+        value = defaultValue
+    end
+    return Settings.parseList(value)
 end
 
 local function readBoolean(source, key)
@@ -127,8 +142,12 @@ function Settings.read()
 
     for index = 1, #categories do
         local category = categories[index]
-        settings[category .. "ItemTypes"] = Settings.parseList(source[category .. "ItemTypes"])
-        settings[category .. "ContainerTypes"] = Settings.parseList(source[category .. "ContainerTypes"])
+        settings[category .. "ItemTypes"] = readList(source, category .. "ItemTypes")
+        settings[category .. "ContainerTypes"] = readList(
+            source,
+            category .. "ContainerTypes",
+            defaultContainerTypes[category]
+        )
     end
     return settings
 end

@@ -345,6 +345,34 @@ test('Smart Storage settings use safe defaults and parse comma lists', () => {
   ]);
 });
 
+test('Smart Storage applies starter container defaults only when values are absent', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    return (settings.FoodContainerTypes or {}).crate == true,
+      (settings.ToolsContainerTypes or {}).crate == true,
+      (settings.MedicineContainerTypes or {}).crate == true,
+      (settings.ConstructionContainerTypes or {}).crate == true,
+      (settings.WeaponsContainerTypes or {}).crate == true,
+      (settings.AmmoContainerTypes or {}).crate == true
+  `, 6);
+  assert.deepEqual(values, [true, true, true, true, false, false]);
+});
+
+test('Smart Storage keeps malformed or explicitly empty container settings fail-closed', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    return (settings.FoodContainerTypes or {}).crate == true,
+      (settings.ToolsContainerTypes or {}).crate == true,
+      (settings.MedicineContainerTypes or {}).crate == true,
+      (settings.ConstructionContainerTypes or {}).crate == true,
+      (settings.WeaponsContainerTypes or {}).crate == true,
+      (settings.AmmoContainerTypes or {}).crate == true
+  `, 6, {
+    sandboxExpression: `{ FoodContainerTypes = 42, ToolsContainerTypes = {}, MedicineContainerTypes = false, ConstructionContainerTypes = '   ', WeaponsContainerTypes = '', AmmoContainerTypes = 'crate' }`,
+  });
+  assert.deepEqual(values, [false, false, false, false, false, true]);
+});
+
 test('Smart Storage keeps item type allowlists separate from container type lists', () => {
   const values = evaluateSmartStorage(`
     local settings = SmartStorage.Settings.read()
