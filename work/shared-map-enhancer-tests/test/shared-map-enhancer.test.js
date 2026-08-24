@@ -172,3 +172,27 @@ test('normalization preserves server fields during update and enforces marker li
   assert.deepEqual(evaluateLua(`local e = { id='i', createdBy='p', createdAt=50, revision=2, category='Base', title='Old', note='', icon='House', color='green', x=1, y=2, z=0, expiresAt=nil }; local a = { requestId='u', id='i', category='Loot', title=' New ', note='', icon='Tent', color='red', duration='8h' }; local m, r = Validation.normalizeUpdate(a, e, 100, {}); return m.id, m.createdBy, m.createdAt, m.revision, m.title, m.expiresAt, r`, 7, { modules: ['constants', 'validation'] }), ['i', 'p', 50, 2, 'New', 28900, null]);
   assert.deepEqual(evaluateLua(`local m, r = Validation.normalizeCreate(${validCreate}, 1000, { markerCount = 500, maxMarkers = 500 }); return m, r`, 2, { modules: ['constants', 'validation'] }), [null, 'limit_reached']);
 });
+
+const serverFixture = `
+  ModData = { records = {}, getOrCreate = function(name)
+    local r = ModData.records[name]; if r == nil then r = { schemaVersion = 1, revision = 0, markers = {} }; ModData.records[name] = r end; return r
+  end, transmit = function(record) record.transmitted = (record.transmitted or 0) + 1 end }
+  player = { getUsername = function() return 'alice' end, isAdmin = function() return false end }
+`;
+
+test('server modules are present and duplicate create replays one delta', () => {
+  assert.deepEqual(evaluateLua(`
+    local valid = { requestId='r1', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='permanent' }
+    local a = Server.validateAndHandle('create', player, valid, 100)
+    local b = Server.validateAndHandle('create', player, valid, 101)
+    return a.kind, b.kind, a.marker.id == b.marker.id, Persistence.revision() == 1
+  `, 4, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture }), ['delta', 'delta', true, true]);
+});
+
+test('server rejects forged fields and unauthorized updates', () => {
+  assert.deepEqual(evaluateLua(`
+    local bad = { requestId='bad', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='permanent', createdBy='mallory' }
+    local a = Server.validateAndHandle('create', player, bad, 100)
+    return a.kind, a.code, Persistence.revision() == 0
+  `, 3, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture }), ['error', 'invalid_request', true]);
+});
