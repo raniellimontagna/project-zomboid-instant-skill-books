@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const { lauxlib, lua, lualib, to_luastring } = require('fengari');
+const zlib = require('node:zlib');
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 const metadataPath = path.join(repositoryRoot, 'mods/SharedMapEnhancer/42/mod.info');
@@ -15,6 +16,54 @@ const readMetadata = (filePath) => Object.fromEntries(
 );
 
 const luaRoot = path.join(repositoryRoot, 'mods/SharedMapEnhancer/42/media/lua');
+const sharedMapRoot = path.join(repositoryRoot, 'mods/SharedMapEnhancer');
+const releaseZipPath = path.join(repositoryRoot, 'outputs/SharedMapEnhancer-0.1.0.zip');
+const roadmapPath = path.join(repositoryRoot, 'docs/superpowers/specs/2026-08-23-coop-quality-of-life-roadmap.md');
+
+function readZipFiles(filePath) {
+  const archive = fs.readFileSync(filePath);
+  const endOfCentralDirectory = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+  const endOffset = archive.lastIndexOf(endOfCentralDirectory);
+  assert.notEqual(endOffset, -1, 'ZIP has an end-of-central-directory record');
+  const entryCount = archive.readUInt16LE(endOffset + 10);
+  let offset = archive.readUInt32LE(endOffset + 16);
+  const entries = new Map();
+  for (let index = 0; index < entryCount; index += 1) {
+    assert.equal(archive.readUInt32LE(offset), 0x02014b50, 'ZIP has a central-directory entry');
+    const method = archive.readUInt16LE(offset + 10);
+    const compressedSize = archive.readUInt32LE(offset + 20);
+    const uncompressedSize = archive.readUInt32LE(offset + 24);
+    const nameLength = archive.readUInt16LE(offset + 28);
+    const extraLength = archive.readUInt16LE(offset + 30);
+    const commentLength = archive.readUInt16LE(offset + 32);
+    const localOffset = archive.readUInt32LE(offset + 42);
+    const name = archive.subarray(offset + 46, offset + 46 + nameLength).toString('utf8');
+    assert.equal(archive.readUInt32LE(localOffset), 0x04034b50, 'ZIP has a local-file entry');
+    const localNameLength = archive.readUInt16LE(localOffset + 26);
+    const localExtraLength = archive.readUInt16LE(localOffset + 28);
+    const dataOffset = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = archive.subarray(dataOffset, dataOffset + compressedSize);
+    const contents = method === 0 ? compressed : method === 8 ? zlib.inflateRawSync(compressed) : assert.fail(`unsupported ZIP compression method ${method}`);
+    assert.equal(contents.length, uncompressedSize, `${name} extracts to its recorded size`);
+    entries.set(name, contents);
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+function sharedMapSourceEntries() {
+  const sourceRoot = path.join(sharedMapRoot, '42');
+  const entries = [];
+  function visit(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(entryPath);
+      else if (entry.isFile()) entries.push(path.posix.join('SharedMapEnhancer', path.relative(sharedMapRoot, entryPath).replaceAll(path.sep, '/')));
+    }
+  }
+  visit(sourceRoot);
+  return entries.sort();
+}
 
 function luaError(state, fallback) {
   return lua.lua_tojsstring(state, -1) || fallback;
@@ -105,11 +154,61 @@ test('root index lists all three independent mods without identity drift', () =>
   assert.match(rootReadme, /SharedMapEnhancer/);
 });
 
-test('roadmap marks Shared Map Enhancer as the third mod in progress', () => {
-  const roadmap = fs.readFileSync(path.join(repositoryRoot, 'docs/superpowers/specs/2026-08-23-coop-quality-of-life-roadmap.md'), 'utf8');
-  assert.match(roadmap, /third mod.*in progress|Shared Map Enhancer.*in progress/i);
+test('roadmap marks Shared Map Enhancer as a ready local release package', () => {
+  const roadmap = fs.readFileSync(roadmapPath, 'utf8');
+  assert.match(roadmap, /Shared Map Enhancer B42.*local release package ready/i);
   assert.match(roadmap, /Workshop upload.*two-client.*acceptance|two-client.*Workshop upload/i);
   assert.match(roadmap, /Shared Map Enhancer B42/);
+});
+
+test('translations cover the complete Shared Map UI contract in EN and PTBR', () => {
+  const required = [
+    'Create', 'Edit', 'Remove', 'Request', 'Filter', 'ClearFilters',
+    'Base', 'Loot', 'Danger', 'Vehicle', 'Medicine', 'Fuel', 'Expedition',
+    'InvalidRequest', 'InvalidCategory', 'InvalidText', 'InvalidIcon', 'InvalidColor',
+    'InvalidDuration', 'InvalidCoordinates', 'Expired', 'LimitReached', 'Unauthorized',
+    'RateLimited', 'NotFound', 'SyncFailure', 'RevisionGap', 'Permanent', '1h', '8h', '24h', '7d',
+  ];
+  for (const locale of ['EN', 'PTBR']) {
+    const filePath = path.join(luaRoot, 'shared/Translate', locale, 'UI.json');
+    assert.equal(fs.existsSync(filePath), true, `${locale} UI.json exists`);
+    const values = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    for (const name of required) {
+      const key = `UI_SharedMapEnhancer_${name}`;
+      assert.equal(typeof values[key], 'string', `${locale} contains ${key}`);
+      assert.notEqual(values[key].trim(), '', `${locale} contains text for ${key}`);
+    }
+    for (const key of Object.keys(values)) assert.match(key, /^UI_SharedMapEnhancer_/);
+  }
+});
+
+test('release documentation records exact limits, permissions, installation, and live acceptance', () => {
+  const readme = fs.readFileSync(path.join(sharedMapRoot, 'README.md'), 'utf8');
+  for (const phrase of [
+    'B42.20', 'Mods=SharedMapEnhancer', 'server-authoritative', '500 markers',
+    'one mutation per player per second', '1–64', '80 characters', '240 characters',
+    'permanent', '1h', '8h', '24h', '7d', 'creator', 'administrator',
+    'outputs/SharedMapEnhancer-0.1.0.zip', 'no Workshop manifest', 'WorkshopItems=',
+    'two-client', 'joining', 'expiration', 'persistence after restart',
+  ]) assert.match(readme, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `README contains ${phrase}`);
+  for (const category of ['Base', 'Loot', 'Danger', 'Vehicle', 'Medicine', 'Fuel', 'Expedition']) assert.match(readme, new RegExp(`\\b${category}\\b`));
+  const rootReadme = fs.readFileSync(path.join(repositoryRoot, 'README.md'), 'utf8');
+  assert.match(rootReadme, /Shared Map Enhancer.*local B42 release package/i);
+  assert.match(rootReadme, /no Workshop ID/i);
+  assert.match(rootReadme, /Instant Skill Books/);
+  assert.match(rootReadme, /Smart Storage/);
+});
+
+test('release ZIP contains exactly the B42 source tree byte-for-byte', () => {
+  assert.equal(fs.existsSync(releaseZipPath), true, 'release ZIP exists');
+  const files = readZipFiles(releaseZipPath);
+  assert.deepEqual([...files.keys()].sort(), sharedMapSourceEntries());
+  for (const [entry, contents] of files) {
+    assert.match(entry, /^SharedMapEnhancer\/42\//);
+    assert.doesNotMatch(entry, /(?:^|\/)(?:test|tests|node_modules|\.superpowers|work|docs)(?:\/|$)|workshop\.txt|preview/i);
+    const sourcePath = path.join(sharedMapRoot, entry.replace(/^SharedMapEnhancer\//, '').replaceAll('/', path.sep));
+    assert.deepEqual(contents, fs.readFileSync(sourcePath), `${entry} matches source`);
+  }
 });
 
 test('test harness is private CommonJS with the required script and Fengari', () => {

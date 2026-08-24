@@ -1,6 +1,6 @@
 # Coop Quality-of-Life Mods — Future Roadmap
 
-> Status: Smart Storage B42 is implemented as a local Build 42.20+ package with automated contract coverage. Workshop upload and two-client live acceptance remain explicit follow-up work. Shared Map Enhancer is the third mod in progress. This roadmap does not change the current Instant Learning implementation.
+> Status: Smart Storage B42 is implemented as a local Build 42.20+ package with automated contract coverage. Workshop upload and two-client live acceptance remain explicit follow-up work. Shared Map Enhancer B42 is a local release package ready, with live two-client acceptance still a follow-up. This roadmap does not change the current Instant Learning implementation.
 
 ## Context
 
@@ -48,7 +48,7 @@ Make it faster to organize nearby storage without scanning the whole base or mov
 
 ### Implementation status
 
-Shared Map Enhancer B42 is the third independent mod in progress. Its scaffold targets Build 42.20+, has its own identity and tests, and deliberately has no Workshop manifest or Workshop ID. Future work includes the server-authoritative marker implementation and a dedicated two-client live acceptance session.
+Shared Map Enhancer B42 is the third independent mod and is ready as the local release package `outputs/SharedMapEnhancer-0.1.0.zip`. It targets Build 42.20+, has its own identity, tests, and server-authoritative marker implementation, and deliberately has no Workshop manifest or Workshop ID. Follow-up work is the dedicated two-client live acceptance session covering persistence and joining-player synchronization.
 
 ### Goal
 
@@ -94,5 +94,5 @@ Synchronize useful map information between coop players without turning the map 
 1. Finish and validate the current Instant Learning improvement.
 2. Complete — Smart Storage B42 is implemented as a standalone local mod and package.
 3. Follow-up — validate Smart Storage in a two-client coop session and then perform its separate Workshop upload.
-4. Implement Shared Map Enhancer B42 as a standalone mod.
-5. Validate marker persistence, joining-player synchronization, and cleanup in coop.
+4. Complete — package Shared Map Enhancer B42 as a standalone local mod.
+5. Follow-up — validate marker persistence, joining-player synchronization, and cleanup in coop before any separate Workshop upload.
