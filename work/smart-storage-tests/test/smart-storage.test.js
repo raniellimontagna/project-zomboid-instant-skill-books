@@ -13,6 +13,19 @@ const settingsPath = path.join(
   smartStorageRoot,
   '42/media/lua/shared/SmartStorage/Settings.lua',
 );
+const protectionPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/shared/SmartStorage/Protection.lua',
+);
+const sandboxOptionsPath = path.join(smartStorageRoot, '42/media/sandbox-options.txt');
+const englishSandboxPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/shared/Translate/EN/Sandbox.json',
+);
+const portugueseSandboxPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/shared/Translate/PTBR/Sandbox.json',
+);
 const classifierPath = path.join(
   smartStorageRoot,
   '42/media/lua/shared/SmartStorage/Classifier.lua',
@@ -74,6 +87,13 @@ function loadSmartStorage({ sandboxExpression = 'nil' } = {}) {
   for (const sourcePath of [settingsPath, classifierPath]) {
     assert.equal(
       lauxlib.luaL_loadstring(state, to_luastring(fs.readFileSync(sourcePath, 'utf8'))),
+      lua.LUA_OK,
+    );
+    assert.equal(lua.lua_pcall(state, 0, 0, 0), lua.LUA_OK);
+  }
+  if (fs.existsSync(protectionPath)) {
+    assert.equal(
+      lauxlib.luaL_loadstring(state, to_luastring(fs.readFileSync(protectionPath, 'utf8'))),
       lua.LUA_OK,
     );
     assert.equal(lua.lua_pcall(state, 0, 0, 0), lua.LUA_OK);
@@ -202,4 +222,109 @@ test('Smart Storage never classifies from display names', () => {
       SmartStorage.Classifier.matches(item, 'Food', settings)
   `, 2);
   assert.deepEqual(values, [true, false]);
+});
+
+test('Smart Storage registers every Build 42 sandbox option with safe defaults', () => {
+  assert.equal(fs.existsSync(sandboxOptionsPath), true, 'sandbox-options.txt exists');
+  const options = fs.readFileSync(sandboxOptionsPath, 'utf8');
+  assert.match(options, /^VERSION\s*=\s*1\s*,/m);
+
+  const defaults = {
+    Food: true,
+    Tools: true,
+    Medicine: true,
+    Construction: true,
+    Weapons: false,
+    Ammo: false,
+    Clothing: false,
+    Literature: false,
+    Fuel: false,
+    Farming: false,
+    Fishing: false,
+  };
+  for (const [category, value] of Object.entries(defaults)) {
+    assert.match(
+      options,
+      new RegExp(`option SmartStorage\\.${category} \\{ type = boolean, default = ${value},`),
+    );
+    assert.match(options, new RegExp(`option SmartStorage\\.${category}Types \\{ type = string,`));
+  }
+
+  assert.match(options, /option SmartStorage\.SearchRadius \{ type = integer, default = 3,/);
+  assert.match(options, /option SmartStorage\.MaxItemsPerRequest \{ type = integer, default = 200,/);
+  assert.match(options, /option SmartStorage\.LowConditionPercent \{ type = integer, default = 25,/);
+  assert.match(options, /option SmartStorage\.CategoryPriority \{ type = string,/);
+});
+
+test('Smart Storage provides English and Brazilian Portuguese sandbox labels and tooltips', () => {
+  for (const translationPath of [englishSandboxPath, portugueseSandboxPath]) {
+    assert.equal(fs.existsSync(translationPath), true, `${translationPath} exists`);
+    const translations = JSON.parse(fs.readFileSync(translationPath, 'utf8'));
+    assert.equal(typeof translations.Sandbox_SmartStorage, 'string');
+    for (const option of [
+      'Food', 'Tools', 'Medicine', 'Construction', 'Weapons', 'Ammo', 'Clothing',
+      'Literature', 'Fuel', 'Farming', 'Fishing', 'SearchRadius', 'MaxItemsPerRequest',
+      'LowConditionPercent', 'CategoryPriority',
+      'FoodTypes', 'ToolsTypes', 'MedicineTypes', 'ConstructionTypes', 'WeaponsTypes',
+      'AmmoTypes', 'ClothingTypes', 'LiteratureTypes', 'FuelTypes', 'FarmingTypes',
+      'FishingTypes',
+    ]) {
+      assert.equal(typeof translations[`Sandbox_SmartStorage_${option}`], 'string');
+      assert.equal(typeof translations[`Sandbox_SmartStorage_${option}_tooltip`], 'string');
+    }
+  }
+});
+
+test('Smart Storage protects unsafe items and allows a valid item', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    local character = {}
+    local function base()
+      return {
+        getFullType = function() return 'Base.TestItem' end,
+        getCategory = function() return 'Food' end,
+        getCondition = function() return 100 end,
+        getConditionMax = function() return 100 end,
+      }
+    end
+    local equipped = base()
+    equipped.isEquipped = function() return true end
+    local worn = base()
+    worn.isWorn = function() return true end
+    local favorite = base()
+    favorite.isFavorite = function() return true end
+    local broken = base()
+    broken.isBroken = function() return true end
+    broken.getCondition = function() return 0 end
+    local low = base()
+    low.getCondition = function() return 25 end
+    local filled = base()
+    filled.getInventory = function()
+      return { getItems = function() return { size = function() return 1 end } end }
+    end
+    local unknown = { getCategory = function() return 'Mystery' end }
+    local valid = base()
+    local function check(item)
+      if SmartStorage.Protection == nil or SmartStorage.Protection.check == nil then
+        return nil
+      end
+      return SmartStorage.Protection.check(item, character, settings)
+    end
+    local equippedAllowed, equippedReason = check(equipped)
+    local wornAllowed, wornReason = check(worn)
+    local favoriteAllowed, favoriteReason = check(favorite)
+    local brokenAllowed, brokenReason = check(broken)
+    local lowAllowed, lowReason = check(low)
+    local filledAllowed, filledReasonValue = check(filled)
+    local unknownAllowed, unknownReason = check(unknown)
+    local validAllowed, validReason = check(valid)
+    return equippedAllowed, equippedReason, wornAllowed, wornReason,
+      favoriteAllowed, favoriteReason, brokenAllowed, brokenReason,
+      lowAllowed, lowReason, filledAllowed, filledReasonValue,
+      unknownAllowed, unknownReason, validAllowed, validReason
+  `, 16);
+  assert.deepEqual(values, [
+    false, 'equipped', false, 'worn', false, 'favorite', false, 'low_condition',
+    false, 'low_condition', false, 'filled_container', false, 'invalid', true, null,
+  ]);
 });
