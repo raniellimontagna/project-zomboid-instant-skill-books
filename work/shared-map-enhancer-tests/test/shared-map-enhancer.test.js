@@ -638,3 +638,24 @@ test('map UI context flow converts coordinates, sends only confirmed-cache inten
     getSpecificPlayer = function() return { getZ=function() return 2 end } end
   ` }), [3, 'create', 120, 340, 2, true, 'update', 'confirmed', 'remove', 'confirmed', true]);
 });
+
+test('map UI default B42 form opens and submits a create intent', () => {
+  assert.deepEqual(evaluateLua(`
+    local opened = MapUI.openCreate(formMap, 'main', 12, 34)
+    createdButton.callback(createdButton.target, createdButton)
+    return opened, createdButton.title, createdPanel.managed, #createdPanel.children, sent.command, sent.args.title, sent.args.x, sent.args.y, sent.args.z
+  `, 9, { modules: ['constants', 'validation', 'cache', 'clientCommands', 'mapAdapter', 'mapUI'], bootstrap: clientFixture + `
+    createdPanel, createdButton = nil, nil
+    ISPanel = { new=function(_, x, y, width, height)
+      createdPanel = { children={}, initialise=function() end, addToUIManager=function(self) self.managed=true end, addChild=function(self, child) table.insert(self.children, child) end }
+      return createdPanel
+    end }
+    ISTextEntryBox = { new=function(_, title) return { initialise=function() end, instantiate=function() end, getInternalText=function() return title end } end }
+    ISButton = { new=function(_, x, y, width, height, title, target, callback)
+      createdButton = { title=title, target=target, callback=callback, initialise=function() end, instantiate=function() end }
+      return createdButton
+    end }
+    formMap = { mapAPI={ uiToWorldX=function(_, x, y) return x * 10 end, uiToWorldY=function(_, x, y) return y * 10 end }, playerNum=0 }
+    getSpecificPlayer = function() return { getZ=function() return 2 end } end
+  ` }), [true, 'Create', true, 2, 'create', '', 120, 340, '2']);
+});

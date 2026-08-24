@@ -102,6 +102,14 @@ local function defaultPayload(form, title)
         icon=marker.icon or "House", color=marker.color or "white", duration="permanent" }
 end
 
+local function translated(name)
+    if type(getText) == "function" then
+        local ok, value = pcall(getText, "UI_SharedMapEnhancer_" .. name)
+        if ok and type(value) == "string" and value ~= "" then return value end
+    end
+    return name
+end
+
 local function defaultForm(form)
     -- These are B42 controls.  The injectable factory remains a narrow seam for
     -- tests and future richer category/icon/color form implementations.
@@ -161,14 +169,6 @@ function MapUI.removeConfirmed(marker)
     if type(marker) ~= "table" or type(marker.id) ~= "string" or type(Cache) ~= "table" or type(Cache.get) ~= "function" then return false end
     if Cache.get(marker.id) == nil or type(ClientCommands) ~= "table" or type(ClientCommands.remove) ~= "function" then return false end
     return ClientCommands.remove(marker.id)
-end
-
-local function translated(name)
-    if type(getText) == "function" then
-        local ok, value = pcall(getText, "UI_SharedMapEnhancer_" .. name)
-        if ok and type(value) == "string" and value ~= "" then return value end
-    end
-    return name
 end
 
 local function contextFor(map, x, y)
