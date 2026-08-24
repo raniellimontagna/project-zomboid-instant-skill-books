@@ -46,11 +46,11 @@ pzversion=42.20
 versionMin=42.20.0
 ```
 
-- [ ] Add migration tests for the moved Instant Skill Books path, unchanged `id=InstantSkillBooks`/v2 metadata, and the exact Smart Storage metadata above.
-- [ ] Run both package tests with the bundled Node directory on `PATH`; expect RED because the move/scaffold do not exist.
-- [ ] Use `git mv`, update all test and README paths, add the metadata and README, and keep outputs ignored without ignoring source/tests/docs. State that Smart Storage has no Workshop manifest until the user creates its item.
-- [ ] Run `pnpm --dir work/instant-skill-books-tests test` and `pnpm --dir work/smart-storage-tests test`; expect all tests green.
-- [ ] Commit `chore: organize repository for multiple mods`.
+- [x] Add migration tests for the moved Instant Skill Books path, unchanged `id=InstantSkillBooks`/v2 metadata, and the exact Smart Storage metadata above.
+- [x] Run both package tests with the bundled Node directory on `PATH`; expect RED because the move/scaffold do not exist.
+- [x] Use `git mv`, update all test and README paths, add the metadata and README, and keep outputs ignored without ignoring source/tests/docs. State that Smart Storage has no Workshop manifest until the user creates its item.
+- [x] Run `pnpm --dir work/instant-skill-books-tests test` and `pnpm --dir work/smart-storage-tests test`; expect all tests green.
+- [x] Commit `chore: organize repository for multiple mods`.
 
 ### Task 2: Add pure settings and classification
 
@@ -65,11 +65,11 @@ versionMin=42.20.0
 - `SmartStorage.Classifier.matches(item, category, settings) -> boolean`
 - `SmartStorage.Classifier.classify(item, settings) -> categoryOrNil`
 
-- [ ] Add failing Fengari cases for Food, Weapon, AMMO, IS_SEED, explicit full-type allowlists, overlaps resolved by `CategoryPriority`, disabled categories, unknown items, malformed settings, and absence of display-name matching.
-- [ ] Run `pnpm --dir work/smart-storage-tests test`; expect RED because modules are absent.
-- [ ] Implement safe defaults: Food/Tools/Medicine/Construction true; all other categories false; `SearchRadius=3`, `MaxItemsPerRequest=200`, `LowConditionPercent=25`; parse comma lists by trimming and discarding empty entries.
-- [ ] Implement explicit allowlist → tag → exact category matching and priority filtering. Unknown APIs/settings must fail closed without throwing.
-- [ ] Run the full Smart Storage test package and commit `feat: add Smart Storage category classifier`.
+- [x] Add failing Fengari cases for Food, Weapon, AMMO, IS_SEED, explicit full-type allowlists, overlaps resolved by `CategoryPriority`, disabled categories, unknown items, malformed settings, and absence of display-name matching.
+- [x] Run `pnpm --dir work/smart-storage-tests test`; expect RED because modules are absent.
+- [x] Implement safe defaults: Food/Tools/Medicine/Construction true; all other categories false; `SearchRadius=3`, `MaxItemsPerRequest=200`, `LowConditionPercent=25`; parse comma lists by trimming and discarding empty entries.
+- [x] Implement explicit allowlist → tag → exact category matching and priority filtering. Unknown APIs/settings must fail closed without throwing.
+- [x] Run the full Smart Storage test package and commit `feat: add Smart Storage category classifier`.
 
 ### Task 3: Register sandbox options and item protections
 
@@ -83,11 +83,11 @@ versionMin=42.20.0
 - `SmartStorage.Protection.check(item, character, settings) -> allowed, reason`
 - Sandbox values are read through `SandboxVars.SmartStorage`.
 
-- [ ] Add failing tests for `VERSION = 1`, all 11 category booleans, `SearchRadius=3`, `MaxItemsPerRequest=200`, `LowConditionPercent=25`, category priority/list options, and EN/PTBR label plus tooltip keys.
-- [ ] Add protection cases for equipped/worn, favorite, broken, low-condition, filled-container, unknown, and valid items; expect RED.
-- [ ] Add exact option names `SmartStorage.Food`, `Tools`, `Medicine`, `Construction`, `Weapons`, `Ammo`, `Clothing`, `Literature`, `Fuel`, `Farming`, `Fishing`, integer options, priority, and per-category comma-separated container-type strings. Verify real B42.20 container IDs before choosing defaults; unknown IDs never match.
-- [ ] Make `Protection.check` fail closed and return stable reasons `equipped`, `worn`, `favorite`, `low_condition`, `filled_container`, or `invalid`.
-- [ ] Run all Smart Storage tests and commit `feat: add Smart Storage settings and item protections`.
+- [x] Add failing tests for `VERSION = 1`, all 11 category booleans, `SearchRadius=3`, `MaxItemsPerRequest=200`, `LowConditionPercent=25`, category priority/list options, and EN/PTBR label plus tooltip keys.
+- [x] Add protection cases for equipped/worn, favorite, broken, low-condition, filled-container, unknown, and valid items; expect RED.
+- [x] Add exact option names `SmartStorage.Food`, `Tools`, `Medicine`, `Construction`, `Weapons`, `Ammo`, `Clothing`, `Literature`, `Fuel`, `Farming`, `Fishing`, integer options, priority, and per-category comma-separated container-type strings. Verify real B42.20 container IDs before choosing defaults; unknown IDs never match.
+- [x] Make `Protection.check` fail closed and return stable reasons `equipped`, `worn`, `favorite`, `low_condition`, `filled_container`, or `invalid`.
+- [x] Run all Smart Storage tests and commit `feat: add Smart Storage settings and item protections`.
 
 ### Task 4: Add server selection and validated transfer
 
@@ -103,12 +103,12 @@ versionMin=42.20.0
 - `SmartStorage.Transfer.deposit(player, request) -> summary`
 - Network contract: module `SmartStorage`, client command `deposit`, server command `result`.
 
-- [ ] Add failing fake-container/request tests for nearest compatible destination, stable distance/`x,y,z` tie-breaks, capacity/access/type/radius rejection, rate limit, maximum items, duplicate request IDs, and rejection of client-provided item IDs.
-- [ ] Run the package and verify RED.
-- [ ] Implement `Selection.choose` with configured type/capacity/access/distance filters and deterministic ordering. Implement `validateRequest` with category/request ID shape, rate window, duplicate cache, and settings checks.
-- [ ] Register one `Events.OnClientCommand` handler. On the server, recursively enumerate only the player's inventory and owned bags, classify/protect each item, discover nearby loaded world containers, revalidate every item, and transfer through vanilla removal/addition/synchronization helpers. Never use arbitrary string `AddItem` or client-side mutation.
-- [ ] Return deterministic counts `moved`, `protected`, `noDestination`, and `failed`; cache duplicate summaries and send `sendServerCommand(player, "SmartStorage", "result", summary)`.
-- [ ] Run tests, `git diff --check`, and a scan for item-creation/deletion shortcuts or `sendClientCommand` in server/shared Smart Storage code. Commit `feat: add server-validated Smart Storage transfers`.
+- [x] Add failing fake-container/request tests for nearest compatible destination, stable distance/`x,y,z` tie-breaks, capacity/access/type/radius rejection, rate limit, maximum items, duplicate request IDs, and rejection of client-provided item IDs.
+- [x] Run the package and verify RED.
+- [x] Implement `Selection.choose` with configured type/capacity/access/distance filters and deterministic ordering. Implement `validateRequest` with category/request ID shape, rate window, duplicate cache, and settings checks.
+- [x] Register one `Events.OnClientCommand` handler. On the server, recursively enumerate only the player's inventory and owned bags, classify/protect each item, discover nearby loaded world containers, revalidate every item, and transfer through vanilla removal/addition/synchronization helpers. Never use arbitrary string `AddItem` or client-side mutation.
+- [x] Return deterministic counts `moved`, `protected`, `noDestination`, and `failed`; cache duplicate summaries and send `sendServerCommand(player, "SmartStorage", "result", summary)`.
+- [x] Run tests, `git diff --check`, and a scan for item-creation/deletion shortcuts or `sendClientCommand` in server/shared Smart Storage code. Commit `feat: add server-validated Smart Storage transfers`.
 
 ### Task 5: Add client inventory action and result display
 
@@ -122,11 +122,11 @@ versionMin=42.20.0
 - Client sends only `{ category = category, requestId = nonce }` through `sendClientCommand(getPlayer(), "SmartStorage", "deposit", args)`.
 - Client handles `Events.OnServerCommand` for `SmartStorage/result`.
 
-- [ ] Add failing contract tests for context-menu label, category payload, nonce generation, no client item mutation, result formatting, and malformed result handling.
-- [ ] Run the package and verify RED.
-- [ ] Hook `Events.OnFillInventoryObjectContextMenu.Add`; show the action only when an eligible item exists, send intent only, and never add/remove/mutate items.
-- [ ] Format the localized result as `Movidos: N | Protegidos: N | Sem destino: N | Falhas: N`; handle unknown/malformed summaries safely.
-- [ ] Run all tests and commit `feat: add Smart Storage inventory action`.
+- [x] Add failing contract tests for context-menu label, category payload, nonce generation, no client item mutation, result formatting, and malformed result handling.
+- [x] Run the package and verify RED.
+- [x] Hook `Events.OnFillInventoryObjectContextMenu.Add`; show the action only when an eligible item exists, send intent only, and never add/remove/mutate items.
+- [x] Format the localized result as `Movidos: N | Protegidos: N | Sem destino: N | Falhas: N`; handle unknown/malformed summaries safely.
+- [x] Run all tests and commit `feat: add Smart Storage inventory action`.
 
 ### Task 6: Finish monorepo docs, local package, and release checks
 
@@ -139,11 +139,10 @@ versionMin=42.20.0
 - Consumes completed source, verified container IDs, metadata, translations, and tests.
 - Produces a root multi-mod index, per-mod installation/configuration guides, roadmap status, and local ZIP without Workshop ID.
 
-- [ ] Add failing assertions for both mods in the root index, every Smart Storage option/default and server-authoritative warning, roadmap status, exact `mod.info`, required ZIP paths, source/package parity, and absence of tests/node_modules/docs/worktree paths.
-- [ ] Run `pnpm --dir work/smart-storage-tests test` and verify RED.
-- [ ] Update docs, build the ZIP with the top-level Smart Storage mod layout, and do not invent `workshop.txt` or a Workshop ID.
-- [ ] Run both mod test packages, `git diff --check`, the forbidden-reference scan, and read-only ZIP inspection. Expect zero failures and zero forbidden package entries.
-- [ ] Commit `docs: prepare Smart Storage B42 release`; keep Workshop upload and two-client live acceptance as explicit follow-up actions.
-
+- [x] Add failing assertions for both mods in the root index, every Smart Storage option/default and server-authoritative warning, roadmap status, exact `mod.info`, required ZIP paths, source/package parity, and absence of tests/node_modules/docs/worktree paths.
+- [x] Run `pnpm --dir work/smart-storage-tests test` and verify RED.
+- [x] Update docs, build the ZIP with the top-level Smart Storage mod layout, and do not invent `workshop.txt` or a Workshop ID.
+- [x] Run both mod test packages, `git diff --check`, the forbidden-reference scan, and read-only ZIP inspection. Expect zero failures and zero forbidden package entries.
+- [x] Commit `docs: prepare Smart Storage B42 release`; keep Workshop upload and two-client live acceptance as explicit follow-up actions.
 
 
