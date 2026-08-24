@@ -42,6 +42,18 @@ const serverPath = path.join(
   smartStorageRoot,
   '42/media/lua/server/SmartStorage/Server.lua',
 );
+const contextMenuPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/client/SmartStorage/ContextMenu.lua',
+);
+const clientCommandsPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/client/SmartStorage/ClientCommands.lua',
+);
+const resultPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/client/SmartStorage/Result.lua',
+);
 
 function readMetadata(filePath) {
   return Object.fromEntries(
@@ -101,6 +113,9 @@ function loadSmartStorage({ sandboxExpression = 'nil', modules = [], bootstrap: 
   if (modules.includes('selection')) sourcePaths.push(selectionPath);
   if (modules.includes('transfer')) sourcePaths.push(transferPath);
   if (modules.includes('server')) sourcePaths.push(serverPath);
+  if (modules.includes('clientCommands')) sourcePaths.push(clientCommandsPath);
+  if (modules.includes('contextMenu')) sourcePaths.push(contextMenuPath);
+  if (modules.includes('result')) sourcePaths.push(resultPath);
   for (const sourcePath of sourcePaths) {
     assert.equal(
       lauxlib.luaL_loadstring(state, to_luastring(fs.readFileSync(sourcePath, 'utf8'))),
@@ -313,6 +328,13 @@ test('Smart Storage provides English and Brazilian Portuguese sandbox labels and
     ]) {
       assert.equal(typeof translations[`Sandbox_SmartStorage_${option}`], 'string');
       assert.equal(typeof translations[`Sandbox_SmartStorage_${option}_tooltip`], 'string');
+    }
+    for (const key of [
+      'UI_SmartStorage_DepositCompatible', 'UI_SmartStorage_Moved',
+      'UI_SmartStorage_Protected', 'UI_SmartStorage_NoDestination',
+      'UI_SmartStorage_Failed', 'UI_SmartStorage_Reason_rate_limited',
+    ]) {
+      assert.equal(typeof translations[key], 'string');
     }
   }
 });
@@ -840,4 +862,112 @@ test('Smart Storage restores after a no-op add into an unchanged non-empty desti
       #destinationItems, destinationItems[1] == existing
   `, 6, { modules: ['selection', 'transfer'] });
   assert.deepEqual(values, [0, 1, 1, true, 1, true]);
+});
+
+test('Smart Storage adds a localized inventory action only for an eligible category and sends intent with a local nonce', () => {
+  const values = evaluateSmartStorage(`
+    local food = { getCategory = function() return 'Food' end }
+    local unknown = { getCategory = function() return 'Mystery' end }
+    local context = {
+      addOption = function(_, label, target, callback, category)
+        option = { label = label, target = target, callback = callback, category = category }
+      end,
+    }
+    Events.OnFillInventoryObjectContextMenu.handler(0, context, { unknown, food })
+    option.callback(option.target, option.category)
+    local eligibleLabel = option.label
+    local sentCategory, sentRequestId = sent.args.category, sent.args.requestId
+    option = nil
+    Events.OnFillInventoryObjectContextMenu.handler(0, context, { unknown })
+    return eligibleLabel, sent.player == player, sent.module, sent.command,
+      sentCategory, type(sentRequestId) == 'string', #sentRequestId > 0,
+      option == nil, sent.args.itemIds == nil, sent.args.items == nil,
+      sent.args.containerId == nil
+  `, 11, {
+    modules: ['clientCommands', 'contextMenu'],
+    bootstrap: `
+      player = {}
+      Events = { OnFillInventoryObjectContextMenu = { Add = function(handler)
+        Events.OnFillInventoryObjectContextMenu.handler = handler
+      end } }
+      getPlayer = function() return player end
+      sendClientCommand = function(target, module, command, args)
+        sent = { player = target, module = module, command = command, args = args }
+      end
+      getText = function(key)
+        if key == 'UI_SmartStorage_DepositCompatible' then return 'Depositar itens compativeis' end
+        return key
+      end
+    `,
+  });
+  assert.deepEqual(values, [
+    'Depositar itens compativeis', true, 'SmartStorage', 'deposit', 'Food', true, true,
+    true, true, true, true,
+  ]);
+});
+
+test('Smart Storage client action source has no inventory mutation or client item identifier path', () => {
+  for (const sourcePath of [contextMenuPath, clientCommandsPath, resultPath]) {
+    assert.equal(fs.existsSync(sourcePath), true, `${sourcePath} exists`);
+    const source = fs.readFileSync(sourcePath, 'utf8');
+    assert.doesNotMatch(source, /(?:\.|:)Remove\s*\(|(?:\.|:)AddItem\s*\(|removeItem\s*\(|setCondition\s*\(/i);
+    assert.doesNotMatch(source, /itemIds|containerId|destinationId/i);
+  }
+});
+
+test('Smart Storage formats a localized server result and displays it only for SmartStorage/result', () => {
+  const values = evaluateSmartStorage(`
+    Events.OnServerCommand.handler('Other', 'result', { moved = 99 })
+    local ignored = shown == nil
+    Events.OnServerCommand.handler('SmartStorage', 'result', {
+      moved = 2, protected = 1, noDestination = 0, failed = 3,
+    })
+    return ignored, shown.player == player, shown.text
+  `, 3, {
+    modules: ['result'],
+    bootstrap: `
+      player = {}
+      Events = { OnServerCommand = { Add = function(handler) Events.OnServerCommand.handler = handler end } }
+      getPlayer = function() return player end
+      HaloTextHelper = { addText = function(target, message) shown = { player = target, text = message } end }
+      getText = function(key)
+        local values = {
+          UI_SmartStorage_Moved = 'Movidos', UI_SmartStorage_Protected = 'Protegidos',
+          UI_SmartStorage_NoDestination = 'Sem destino', UI_SmartStorage_Failed = 'Falhas',
+        }
+        return values[key] or key
+      end
+    `,
+  });
+  assert.deepEqual(values, [true, true, 'Movidos: 2 | Protegidos: 1 | Sem destino: 0 | Falhas: 3']);
+});
+
+test('Smart Storage safely clamps malformed results and appends an available localized reason', () => {
+  const values = evaluateSmartStorage(`
+    Events.OnServerCommand.handler('SmartStorage', 'result', {
+      moved = -2, protected = 'one', noDestination = 4.9, failed = nil, reason = 'rate_limited',
+    })
+    local known = shown.text
+    Events.OnServerCommand.handler('SmartStorage', 'result', 'invalid')
+    return known, shown.text
+  `, 2, {
+    modules: ['result'],
+    bootstrap: `
+      Events = { OnServerCommand = { Add = function(handler) Events.OnServerCommand.handler = handler end } }
+      getPlayer = function() return {} end
+      HaloTextHelper = { addText = function(_, message) shown = { text = message } end }
+      getText = function(key)
+        local values = {
+          UI_SmartStorage_Moved = 'Movidos', UI_SmartStorage_Protected = 'Protegidos',
+          UI_SmartStorage_NoDestination = 'Sem destino', UI_SmartStorage_Failed = 'Falhas',
+          UI_SmartStorage_Reason_rate_limited = 'Aguarde antes de tentar novamente',
+        }
+        return values[key] or key
+      end
+    `,
+  });
+  assert.deepEqual(values, [
+    'Movidos: 0 | Protegidos: 0 | Sem destino: 4 | Falhas: 0 | Aguarde antes de tentar novamente',
+    'Movidos: 0 | Protegidos: 0 | Sem destino: 0 | Falhas: 0',
+  ]);
 });

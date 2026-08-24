@@ -73,5 +73,11 @@
   "Sandbox_SmartStorage_FishingItemTypes": "Tipos de Item para Pesca",
   "Sandbox_SmartStorage_FishingItemTypes_tooltip": "Tipos completos de item permitidos explicitamente para pesca, separados por vírgulas.",
   "Sandbox_SmartStorage_FishingContainerTypes": "Tipos de Contêiner para Pesca",
-  "Sandbox_SmartStorage_FishingContainerTypes_tooltip": "Tipos de contêiner verificados, separados por vírgulas, para pesca."
+  "Sandbox_SmartStorage_FishingContainerTypes_tooltip": "Tipos de contêiner verificados, separados por vírgulas, para pesca.",
+  "UI_SmartStorage_DepositCompatible": "Depositar itens compatíveis",
+  "UI_SmartStorage_Moved": "Movidos",
+  "UI_SmartStorage_Protected": "Protegidos",
+  "UI_SmartStorage_NoDestination": "Sem destino",
+  "UI_SmartStorage_Failed": "Falhas",
+  "UI_SmartStorage_Reason_rate_limited": "Aguarde antes de tentar novamente"
 }

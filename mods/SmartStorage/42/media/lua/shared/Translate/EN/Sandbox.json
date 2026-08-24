@@ -73,5 +73,11 @@
   "Sandbox_SmartStorage_FishingItemTypes": "Fishing Item Types",
   "Sandbox_SmartStorage_FishingItemTypes_tooltip": "Comma-separated full item types explicitly allowed for fishing.",
   "Sandbox_SmartStorage_FishingContainerTypes": "Fishing Container Types",
-  "Sandbox_SmartStorage_FishingContainerTypes_tooltip": "Comma-separated verified destination container types for fishing items."
+  "Sandbox_SmartStorage_FishingContainerTypes_tooltip": "Comma-separated verified destination container types for fishing items.",
+  "UI_SmartStorage_DepositCompatible": "Deposit compatible items",
+  "UI_SmartStorage_Moved": "Moved",
+  "UI_SmartStorage_Protected": "Protected",
+  "UI_SmartStorage_NoDestination": "No destination",
+  "UI_SmartStorage_Failed": "Failures",
+  "UI_SmartStorage_Reason_rate_limited": "Please wait before trying again"
 }
