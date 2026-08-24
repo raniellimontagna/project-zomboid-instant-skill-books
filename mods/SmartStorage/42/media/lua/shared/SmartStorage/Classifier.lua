@@ -34,17 +34,17 @@ local vanillaTags = {
 }
 
 local allowlistKeys = {
-    Food = { "FoodTypes", "FoodAllowlist", "FoodTypeAllowlist" },
-    Tools = { "ToolsTypes", "ToolsAllowlist", "ToolsTypeAllowlist" },
-    Medicine = { "MedicineTypes", "MedicineAllowlist", "MedicineTypeAllowlist" },
-    Construction = { "ConstructionTypes", "ConstructionAllowlist", "ConstructionTypeAllowlist" },
-    Weapons = { "WeaponsTypes", "WeaponsAllowlist", "WeaponsTypeAllowlist" },
-    Ammo = { "AmmoTypes", "AmmoAllowlist", "AmmoTypeAllowlist" },
-    Clothing = { "ClothingTypes", "ClothingAllowlist", "ClothingTypeAllowlist" },
-    Literature = { "LiteratureTypes", "LiteratureAllowlist", "LiteratureTypeAllowlist" },
-    Fuel = { "FuelTypes", "FuelAllowlist", "FuelTypeAllowlist" },
-    Farming = { "FarmingTypes", "FarmingAllowlist", "FarmingTypeAllowlist" },
-    Fishing = { "FishingTypes", "FishingAllowlist", "FishingTypeAllowlist" },
+    Food = { "FoodItemTypes", "FoodItemAllowlist", "FoodItemTypeAllowlist" },
+    Tools = { "ToolsItemTypes", "ToolsItemAllowlist", "ToolsItemTypeAllowlist" },
+    Medicine = { "MedicineItemTypes", "MedicineItemAllowlist", "MedicineItemTypeAllowlist" },
+    Construction = { "ConstructionItemTypes", "ConstructionItemAllowlist", "ConstructionItemTypeAllowlist" },
+    Weapons = { "WeaponsItemTypes", "WeaponsItemAllowlist", "WeaponsItemTypeAllowlist" },
+    Ammo = { "AmmoItemTypes", "AmmoItemAllowlist", "AmmoItemTypeAllowlist" },
+    Clothing = { "ClothingItemTypes", "ClothingItemAllowlist", "ClothingItemTypeAllowlist" },
+    Literature = { "LiteratureItemTypes", "LiteratureItemAllowlist", "LiteratureItemTypeAllowlist" },
+    Fuel = { "FuelItemTypes", "FuelItemAllowlist", "FuelItemTypeAllowlist" },
+    Farming = { "FarmingItemTypes", "FarmingItemAllowlist", "FarmingItemTypeAllowlist" },
+    Fishing = { "FishingItemTypes", "FishingItemAllowlist", "FishingItemTypeAllowlist" },
 }
 
 local function validSettings(settings)

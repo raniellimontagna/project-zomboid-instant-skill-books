@@ -122,7 +122,7 @@ local function itemIdentity(item, settings)
 
     if fullTypeStatus == "ok" and fullType ~= "" then
         for index = 1, #allowlistCategories do
-            local values = settings[allowlistCategories[index] .. "Types"]
+            local values = settings[allowlistCategories[index] .. "ItemTypes"]
             if type(values) == "table" and values[fullType] == true then
                 return true
             end

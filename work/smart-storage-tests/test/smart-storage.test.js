@@ -135,6 +135,19 @@ test('Smart Storage settings use safe defaults and parse comma lists', () => {
   ]);
 });
 
+test('Smart Storage keeps item type allowlists separate from container type lists', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    return (settings.FoodItemTypes or {})['Base.CustomFood'],
+      (settings.FoodContainerTypes or {}).crate,
+      settings.FoodTypes == nil,
+      (settings.FoodItemTypes or {})['crate'] == nil
+  `, 4, {
+    sandboxExpression: `{ FoodItemTypes = 'Base.CustomFood', FoodContainerTypes = 'crate' }`,
+  });
+  assert.deepEqual(values, [true, true, true, true]);
+});
+
 test('Smart Storage classifies exact vanilla categories, tags, and explicit full types', () => {
   const values = evaluateSmartStorage(`
     local defaults = SmartStorage.Settings.read()
@@ -158,7 +171,7 @@ test('Smart Storage classifies exact vanilla categories, tags, and explicit full
       SmartStorage.Classifier.classify(foodAllowlist, defaults),
       SmartStorage.Classifier.classify(medicine, defaults)
   `, 6, {
-    sandboxExpression: `{ FoodTypes = 'Base.CustomFood', MedicineTypes = 'Base.Pills' }`,
+    sandboxExpression: `{ FoodItemTypes = 'Base.CustomFood', MedicineItemTypes = 'Base.Pills' }`,
   });
   assert.deepEqual(values, ['Food', 'Weapons', 'Ammo', 'Farming', 'Food', 'Medicine']);
 });
@@ -247,13 +260,18 @@ test('Smart Storage registers every Build 42 sandbox option with safe defaults',
       options,
       new RegExp(`option SmartStorage\\.${category} \\{ type = boolean, default = ${value},`),
     );
-    assert.match(options, new RegExp(`option SmartStorage\\.${category}Types \\{ type = string,`));
+    assert.match(options, new RegExp(`option SmartStorage\\.${category}ItemTypes \\{ type = string, default = "",`));
+    assert.match(options, new RegExp(`option SmartStorage\\.${category}ContainerTypes \\{ type = string, default = "",`));
   }
 
   assert.match(options, /option SmartStorage\.SearchRadius \{ type = integer, default = 3,/);
   assert.match(options, /option SmartStorage\.MaxItemsPerRequest \{ type = integer, default = 200,/);
   assert.match(options, /option SmartStorage\.LowConditionPercent \{ type = integer, default = 25,/);
   assert.match(options, /option SmartStorage\.CategoryPriority \{ type = string,/);
+  assert.match(
+    options,
+    /option SmartStorage\.CategoryPriority \{ type = string, default = "Food,Tools,Medicine,Construction,Weapons,Ammo,Clothing,Literature,Fuel,Farming,Fishing",/
+  );
 });
 
 test('Smart Storage provides English and Brazilian Portuguese sandbox labels and tooltips', () => {
@@ -265,9 +283,13 @@ test('Smart Storage provides English and Brazilian Portuguese sandbox labels and
       'Food', 'Tools', 'Medicine', 'Construction', 'Weapons', 'Ammo', 'Clothing',
       'Literature', 'Fuel', 'Farming', 'Fishing', 'SearchRadius', 'MaxItemsPerRequest',
       'LowConditionPercent', 'CategoryPriority',
-      'FoodTypes', 'ToolsTypes', 'MedicineTypes', 'ConstructionTypes', 'WeaponsTypes',
-      'AmmoTypes', 'ClothingTypes', 'LiteratureTypes', 'FuelTypes', 'FarmingTypes',
-      'FishingTypes',
+      'FoodItemTypes', 'ToolsItemTypes', 'MedicineItemTypes', 'ConstructionItemTypes',
+      'WeaponsItemTypes', 'AmmoItemTypes', 'ClothingItemTypes', 'LiteratureItemTypes',
+      'FuelItemTypes', 'FarmingItemTypes', 'FishingItemTypes',
+      'FoodContainerTypes', 'ToolsContainerTypes', 'MedicineContainerTypes',
+      'ConstructionContainerTypes', 'WeaponsContainerTypes', 'AmmoContainerTypes',
+      'ClothingContainerTypes', 'LiteratureContainerTypes', 'FuelContainerTypes',
+      'FarmingContainerTypes', 'FishingContainerTypes',
     ]) {
       assert.equal(typeof translations[`Sandbox_SmartStorage_${option}`], 'string');
       assert.equal(typeof translations[`Sandbox_SmartStorage_${option}_tooltip`], 'string');
@@ -295,7 +317,7 @@ test('Smart Storage protects unsafe items and allows a valid item', () => {
     favorite.isFavorite = function() return true end
     local broken = base()
     broken.isBroken = function() return true end
-    broken.getCondition = function() return 0 end
+    broken.getCondition = function() return 100 end
     local low = base()
     low.getCondition = function() return 25 end
     local filled = base()
@@ -327,4 +349,18 @@ test('Smart Storage protects unsafe items and allows a valid item', () => {
     false, 'equipped', false, 'worn', false, 'favorite', false, 'low_condition',
     false, 'low_condition', false, 'filled_container', false, 'invalid', true, null,
   ]);
+});
+
+test('Smart Storage does not match an unknown full type with default settings', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    local unknown = {
+      getFullType = function() return 'Base.UnknownDefaultItem' end,
+      getCategory = function() return 'Other' end,
+    }
+    return SmartStorage.Classifier.classify(unknown, settings) == nil,
+      (settings.FoodItemTypes or {})['Base.UnknownDefaultItem'] == nil,
+      (settings.FoodContainerTypes or {})['Base.UnknownDefaultItem'] == nil
+  `, 3);
+  assert.deepEqual(values, [true, true, true]);
 });

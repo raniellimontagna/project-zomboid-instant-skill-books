@@ -127,7 +127,8 @@ function Settings.read()
 
     for index = 1, #categories do
         local category = categories[index]
-        settings[category .. "Types"] = Settings.parseList(source[category .. "Types"])
+        settings[category .. "ItemTypes"] = Settings.parseList(source[category .. "ItemTypes"])
+        settings[category .. "ContainerTypes"] = Settings.parseList(source[category .. "ContainerTypes"])
     end
     return settings
 end
