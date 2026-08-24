@@ -142,10 +142,8 @@ local function squaresAccessible(playerSquare, targetSquare)
         return false
     end
     if playerSquare == targetSquare then return true end
-    -- Build 42's reachability check accounts for the complete path between
-    -- squares, including an intermediate blocked tile.  The local square
-    -- wall/window helpers only describe one edge and are not sufficient for
-    -- containers farther than the adjacent square.
+    -- Delegate reachability to Build 42's square API.  It is intentionally
+    -- fail-closed when the engine cannot prove the target is reachable.
     local reachableOk, reachable = call(playerSquare, "canReachTo", targetSquare)
     return reachableOk and reachable == true
 end

@@ -996,7 +996,7 @@ test('Smart Storage accepts an ordinary accessible world container through the t
   assert.deepEqual(values, [1, 1, 0, 0]);
 });
 
-test('Smart Storage rejects a non-adjacent target when Build 42 reachability finds an intermediate block', () => {
+test('Smart Storage rejects a non-adjacent target when Build 42 reachability cannot prove access', () => {
   const values = evaluateSmartStorage(`
     local sourceItems, destinationItems = {}, {}
     local source = {
