@@ -44,7 +44,7 @@ function Cache.reset(snapshot)
     end
     local nextMarkers = {}
     for _, marker in pairs(snapshot.markers) do
-        if type(marker) ~= "table" or nextMarkers[marker.id] ~= nil or not validMarker(marker) then return false, "invalid_response" end
+        if type(marker) ~= "table" or type(marker.id) ~= "string" or not validMarker(marker) or nextMarkers[marker.id] ~= nil then return false, "invalid_response" end
         nextMarkers[marker.id] = copy(marker)
     end
     Cache._markers = nextMarkers

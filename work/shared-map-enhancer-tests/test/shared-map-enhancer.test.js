@@ -324,6 +324,23 @@ test('client cache applies contiguous deltas and rejects gaps or malformed marke
   `, 8, { modules: ['constants', 'validation', 'cache'] }), [true, null, false, 'revision_gap', false, 'invalid_response', 2, true]);
 });
 
+test('client cache rejects malformed snapshot ids, expired markers, and duplicate ids without mutation', () => {
+  assert.deepEqual(evaluateLua(`
+    local seed = { id='seed', category='Base', title='Seed', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=1 }
+    Cache.reset({ revision=1, markers={ seed } })
+    local missing = { category='Base', title='Missing', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=2 }
+    local wrong = { id=3, category='Base', title='Wrong', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=2 }
+    local expired = { id='expired', category='Base', title='Expired', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, expiresAt=1, revision=2 }
+    local duplicate = { id='dup', category='Base', title='D1', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=2 }
+    local duplicate2 = { id='dup', category='Base', title='D2', note='', icon='House', color='green', x=2, y=2, z=0, createdBy='p', createdAt=2, revision=2 }
+    local a, ar = Cache.reset({ revision=2, markers={ missing } })
+    local b, br = Cache.reset({ revision=2, markers={ wrong } })
+    local c, cr = Cache.reset({ revision=2, markers={ expired } })
+    local d, dr = Cache.reset({ revision=2, markers={ duplicate, duplicate2 } })
+    return a, ar, b, br, c, cr, d, dr, Cache.revision(), Cache.get('seed').title
+  `, 10, { modules: ['constants', 'validation', 'cache'] }), [false, 'invalid_response', false, 'invalid_response', false, 'invalid_response', false, 'invalid_response', 1, 'Seed']);
+});
+
 test('client commands send exact intents with unique bounded request ids', () => {
   assert.deepEqual(evaluateLua(`
     ClientCommands.create({ category='Base', title='T', note='', icon='House', color='green', x=1, y=2, z=0, duration='1h', id='evil', createdBy='evil' })
@@ -347,4 +364,15 @@ test('client event adapter applies responses and requests snapshot after a gap',
   `, 5, { modules: ['constants', 'validation', 'cache', 'clientCommands'], bootstrap: clientFixture + `
     Events = { OnServerCommand = { Add = function(handler) Events.OnServerCommand.handler = handler end } }
   ` }), [true, null, 2, true, 'request']);
+});
+
+test('client adapter requests a snapshot after rejected snapshot and preserves prior cache', () => {
+  assert.deepEqual(evaluateLua(`
+    local seed = { id='seed', category='Base', title='Seed', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=1 }
+    Cache.reset({ revision=1, markers={ seed } })
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'snapshot', { revision=2, markers={ { category='Base', title='Missing', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=2 } } })
+    return Cache.revision(), Cache.get('seed').title, sent.command
+  `, 3, { modules: ['constants', 'validation', 'cache', 'clientCommands'], bootstrap: clientFixture + `
+    Events = { OnServerCommand = { Add = function(handler) Events.OnServerCommand.handler = handler end } }
+  ` }), [1, 'Seed', 'request']);
 });
