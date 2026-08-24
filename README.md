@@ -8,6 +8,7 @@ This repository is a multi-mod Project Zomboid Build 42 workspace. Each mod has 
 | --- | --- | --- | --- |
 | [Instant Skill Books](mods/InstantSkillBooks/README.md) | 2.0.0 | [Install and configuration](mods/InstantSkillBooks/README.md) | Published on Steam Workshop (`3786090811`) |
 | [Smart Storage](mods/SmartStorage/README.md) | 0.1.0 | [Install and configuration](mods/SmartStorage/README.md) | Local B42 release package; Workshop upload and two-client acceptance remain follow-ups |
+| [Shared Map Enhancer](mods/SharedMapEnhancer/README.md) | 0.1.0 | [Install and configuration](mods/SharedMapEnhancer/README.md) | Shared Map Enhancer local B42 release package; no Workshop ID |
 
 ## Instant Skill Books v2.0.0
 
@@ -52,7 +53,7 @@ pnpm --dir work/instant-skill-books-tests test
 pnpm --dir work/smart-storage-tests test
 ```
 
-The [roadmap](docs/superpowers/specs/2026-08-23-coop-quality-of-life-roadmap.md) keeps Smart Storage Workshop upload and live two-client acceptance explicit, and lists Shared Map Enhancer as the next independent mod.
+The [Shared Map Enhancer guide](mods/SharedMapEnhancer/README.md) documents its local B42 package and live acceptance checklist. The [roadmap](docs/superpowers/specs/2026-08-23-coop-quality-of-life-roadmap.md) keeps Smart Storage Workshop upload and live two-client acceptance explicit while retaining the Shared Map Enhancer follow-up acceptance work.
 
 ## License
 
