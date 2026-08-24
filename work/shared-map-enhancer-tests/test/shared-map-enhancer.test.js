@@ -176,7 +176,7 @@ test('normalization preserves server fields during update and enforces marker li
 const serverFixture = `
   ModData = { records = {}, getOrCreate = function(name)
     local r = ModData.records[name]; if r == nil then r = { schemaVersion = 1, revision = 0, markers = {} }; ModData.records[name] = r end; return r
-  end, transmit = function(record) record.transmitted = (record.transmitted or 0) + 1 end }
+  end, transmit = function(tag) ModData.lastTransmit = tag; ModData.transmitCount = (ModData.transmitCount or 0) + 1 end }
   player = { getUsername = function() return 'alice' end, isAdmin = function() return false end }
 `;
 
@@ -195,4 +195,65 @@ test('server rejects forged fields and unauthorized updates', () => {
     local a = Server.validateAndHandle('create', player, bad, 100)
     return a.kind, a.code, Persistence.revision() == 0
   `, 3, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture }), ['error', 'invalid_request', true]);
+});
+
+test('accepted persistence mutations transmit the namespace and increment revision', () => {
+  assert.deepEqual(evaluateLua(`
+    local valid = { requestId='r1', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='permanent' }
+    local a = Server.validateAndHandle('create', player, valid, 100)
+    local tag1, rev1 = ModData.lastTransmit, Persistence.revision()
+    local b = Server.validateAndHandle('update', player, { requestId='u1', id=a.marker.id, category='Loot', title='Camp 2', note='', icon='Tent', color='red', duration='permanent' }, 102)
+    local tag2, rev2 = ModData.lastTransmit, Persistence.revision()
+    local c = Server.validateAndHandle('remove', player, { requestId='m1', id=a.marker.id }, 104)
+    return tag1, tag2, ModData.lastTransmit, rev1 == 1, rev2 == 2, Persistence.revision() == 3, c.operation
+  `, 7, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture }), ['SharedMapEnhancer', 'SharedMapEnhancer', 'SharedMapEnhancer', true, true, true, 'remove']);
+});
+
+test('duplicate replay is isolated and bounded per player', () => {
+  assert.deepEqual(evaluateLua(`
+    local valid = { requestId='r1', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='permanent' }
+    local a = Server.validateAndHandle('create', player, valid, 100)
+    a.marker.title = 'mutated'
+    local b = Server.validateAndHandle('create', player, valid, 101)
+    return b.marker.title, a.marker.id == b.marker.id, Persistence.revision() == 1
+  `, 3, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture }), ['Camp', true, true]);
+});
+
+test('load discards corrupt and expired records, caps deterministically, and transmits', () => {
+  assert.deepEqual(evaluateLua(`
+    local r = ModData.getOrCreate('SharedMapEnhancer')
+    local function marker(id, createdAt, expiresAt)
+      return { id=id, category='Base', title=id, note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=createdAt, expiresAt=expiresAt, revision=1 }
+    end
+    r.markers.bad = { id='bad', title=false }
+    r.markers.expired = marker('expired', 1, 10)
+    for i = 1, 501 do local id = string.format('m%03d', i); r.markers[id] = marker(id, i, nil) end
+    Persistence.load(100)
+    local count, first, last = 0, nil, nil
+    for id in pairs(r.markers) do count = count + 1; if first == nil or id < first then first = id end; if last == nil or id > last then last = id end end
+    return count, r.markers.bad == nil, r.markers.expired == nil, first, last, ModData.lastTransmit
+  `, 6, { modules: ['constants', 'validation', 'persistence'], bootstrap: serverFixture }), [500, true, true, 'm001', 'm500', 'SharedMapEnhancer']);
+});
+
+test('authorization, rate limiting, malformed shapes, snapshots, and fail-closed events', () => {
+  assert.deepEqual(evaluateLua(`
+    local valid = { requestId='r1', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='1h' }
+    local created = Server.validateAndHandle('create', player, valid, 100)
+    local limited = Server.validateAndHandle('update', player, { requestId='u1', id=created.marker.id, category='Loot', title='Changed', note='', icon='Tent', color='red', duration='permanent' }, 100)
+    local malformed = Server.validateAndHandle('create', player, { requestId='bad', category='Base', title='x', note='', icon='House', color='green', x=1, y=2, z=0, duration='permanent', revision=99 }, 102)
+    local other = { getUsername=function() return 'bob' end, isAdmin=function() return false end }
+    local denied = Server.validateAndHandle('update', other, { requestId='u2', id=created.marker.id, category='Loot', title='Nope', note='', icon='Tent', color='red', duration='permanent' }, 102)
+    local snap = Server.validateAndHandle('request', other, { requestId='s1' }, 102)
+    return created.kind, limited.code, malformed.code, denied.code, snap.kind, #snap.markers, Persistence.revision() == 1
+  `, 7, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture }), ['delta', 'rate_limited', 'invalid_request', 'unauthorized', 'snapshot', 1, true]);
+});
+
+test('administrator may remove another player marker', () => {
+  assert.deepEqual(evaluateLua(`
+    local valid = { requestId='r1', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='permanent' }
+    local created = Server.validateAndHandle('create', player, valid, 100)
+    local admin = { getUsername=function() return 'admin' end, getAccessLevel=function() return 'admin' end }
+    local removed = Server.validateAndHandle('remove', admin, { requestId='rm1', id=created.marker.id }, 102)
+    return removed.kind, removed.operation, Persistence.get(created.marker.id) == nil
+  `, 3, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture }), ['delta', 'remove', true]);
 });

@@ -1,5 +1,15 @@
 local Server = {}
-local cache, lastMutation, sequence = {}, {}, 0
+local cache, cacheOrder, lastMutation, sequence = {}, {}, {}, 0
+local CACHE_LIMIT = 256 -- bounded FIFO window per authenticated player
+
+local function clone(value, seen)
+    if type(value) ~= "table" then return value end
+    seen = seen or {}
+    if seen[value] then return seen[value] end
+    local result = {}; seen[value] = result
+    for key, item in pairs(value) do result[clone(key, seen)] = clone(item, seen) end
+    return result
+end
 
 local function playerId(player)
     if type(player) ~= "table" and type(player) ~= "userdata" then return nil end
@@ -30,19 +40,19 @@ end
 
 local function remember(pid, requestId, result)
     cache[pid] = cache[pid] or {}
-    cache[pid][requestId] = result
+    cacheOrder[pid] = cacheOrder[pid] or {}
+    cache[pid][requestId] = clone(result)
+    cacheOrder[pid][#cacheOrder[pid] + 1] = requestId
+    if #cacheOrder[pid] > CACHE_LIMIT then
+        local evicted = table.remove(cacheOrder[pid], 1)
+        cache[pid][evicted] = nil
+    end
     return result
 end
 
 local function nextId(pid, now)
     sequence = sequence + 1
     return tostring(pid) .. "-" .. tostring(now) .. "-" .. tostring(sequence)
-end
-
-local function markerCount()
-    local count = 0
-    for _ in pairs(Persistence._data and Persistence._data.markers or {}) do count = count + 1 end
-    return count
 end
 
 function Server.validateAndHandle(command, player, args, now)
@@ -53,7 +63,7 @@ function Server.validateAndHandle(command, player, args, now)
     local shapeOk, shapeReason = Validation.validateRequestShape(command, args)
     if not shapeOk then return responseError(args.requestId, shapeReason or "invalid_request") end
     local prior = cache[pid] and cache[pid][args.requestId]
-    if prior ~= nil then return prior end
+    if prior ~= nil then return clone(prior) end
     local current = type(now) == "number" and now or 0
     Persistence.cleanup(current)
     if command == "request" then

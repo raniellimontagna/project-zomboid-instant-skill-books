@@ -10,7 +10,7 @@ end
 
 local function transmit()
     if ModData and type(ModData.transmit) == "function" and registry ~= nil then
-        pcall(ModData.transmit, registry)
+        pcall(ModData.transmit, namespace)
     end
 end
 
