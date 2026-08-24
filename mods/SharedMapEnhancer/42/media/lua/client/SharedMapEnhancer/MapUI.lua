@@ -1,4 +1,5 @@
-local MapUI = { _adapters = {}, _adapterByKey = {}, _filters = {}, _formFactory = nil, _initialSnapshotRequested = false, _readyRetries = 0 }
+local MapUI = { _adapters = {}, _adapterByKey = {}, _uiByKey = {}, _filters = {}, _formFactory = nil, _initialSnapshotRequested = false, _readyRetries = 0, _readinessTicks = 0 }
+local installLifecycleHooks
 
 local function candidate(value)
     if type(value) ~= "table" then return nil end
@@ -17,19 +18,32 @@ local function instanceOf(value)
     return value
 end
 
+local function detachCandidate(key)
+    local adapter = MapUI._adapterByKey[key]
+    if adapter ~= nil and type(MapAdapter) == "table" and type(MapAdapter.clearOwnedSymbols) == "function" then
+        MapAdapter.clearOwnedSymbols(adapter)
+    end
+    for index = #MapUI._adapters, 1, -1 do
+        if MapUI._adapters[index] == adapter then table.remove(MapUI._adapters, index) end
+    end
+    MapUI._adapterByKey[key] = nil
+    MapUI._uiByKey[key] = nil
+end
+
 local function addCandidate(value, key)
     local map = instanceOf(value)
-    if map == nil or MapUI._adapterByKey[key] ~= nil then return false end
+    if map == nil then return false end
+    if MapUI._adapterByKey[key] ~= nil and MapUI._uiByKey[key] == map then return false end
     local adapter = candidate(map)
-    if adapter ~= nil then
-        adapter.key = key
-        adapter.filters = MapUI._filters[key] or {}
-        MapUI._adapters[#MapUI._adapters + 1] = adapter
-        MapUI._adapterByKey[key] = adapter
-        MapUI.installContextHook(map, key)
-        return true
-    end
-    return false
+    if adapter == nil then return false end
+    detachCandidate(key)
+    adapter.key = key
+    adapter.filters = MapUI._filters[key] or {}
+    MapUI._adapters[#MapUI._adapters + 1] = adapter
+    MapUI._adapterByKey[key] = adapter
+    MapUI._uiByKey[key] = map
+    MapUI.installContextHook(map, key)
+    return true
 end
 
 local function playerMiniMap(playerNum)
@@ -49,19 +63,20 @@ end
 
 function MapUI.register()
     if type(MapAdapter) ~= "table" then return false end
+    if installLifecycleHooks ~= nil then installLifecycleHooks() end
     local main = rawget(_G, "ISWorldMap_instance") or rawget(_G, "UIWorldMap") or rawget(_G, "mapUI")
     local playerNum = type(main) == "table" and type(main.playerNum) == "number" and main.playerNum or 0
     local mini = playerMiniMap(playerNum)
-    addCandidate(main, "main")
-    if mini ~= main then addCandidate(mini, "minimap") end
+    local changed = addCandidate(main, "main")
+    if mini ~= main and addCandidate(mini, "minimap") then changed = true end
     if #MapUI._adapters == 0 then return false end
     MapUI.requestInitialSnapshot()
-    return true
+    return true, changed
 end
 
 function MapUI.refreshAll()
+    MapUI.register()
     if type(Cache) ~= "table" or type(Cache.list) ~= "function" then return false end
-    if #MapUI._adapters == 0 then MapUI.register() end
     local markers = Cache.list(nil)
     local refreshed = false
     for _, adapter in ipairs(MapUI._adapters) do
@@ -247,9 +262,27 @@ function MapUI.installContextHook(map, key)
     return true
 end
 
+installLifecycleHooks = function()
+    if MapUI._worldMapShowHook == nil and type(ISWorldMap) == "table" and type(ISWorldMap.ShowWorldMap) == "function" then
+        local vanillaShowWorldMap = ISWorldMap.ShowWorldMap
+        ISWorldMap.ShowWorldMap = function(...)
+            vanillaShowWorldMap(...)
+            MapUI.refreshAll()
+        end
+        MapUI._worldMapShowHook = vanillaShowWorldMap
+    end
+    if MapUI._miniMapRecreateHook == nil and type(ISMiniMap) == "table" and type(ISMiniMap.Recreate) == "function" then
+        local vanillaRecreate = ISMiniMap.Recreate
+        ISMiniMap.Recreate = function(...)
+            vanillaRecreate(...)
+            MapUI.refreshAll()
+        end
+        MapUI._miniMapRecreateHook = vanillaRecreate
+    end
+end
+
 if Events then
     local function hook()
-        MapUI.register()
         MapUI.refreshAll()
     end
     if Events.OnCreateUI and type(Events.OnCreateUI.Add) == "function" then Events.OnCreateUI.Add(hook) end
@@ -259,6 +292,13 @@ if Events then
             if MapUI._readyRetries < 120 and (#MapUI._adapters == 0 or MapUI._adapterByKey.main == nil or MapUI._adapterByKey.minimap == nil or not MapUI._initialSnapshotRequested) then
                 MapUI._readyRetries = MapUI._readyRetries + 1
                 hook()
+                return
+            end
+            MapUI._readinessTicks = MapUI._readinessTicks + 1
+            if MapUI._readinessTicks >= 300 then
+                MapUI._readinessTicks = 0
+                local _, changed = MapUI.register()
+                if changed then MapUI.refreshAll() end
             end
         end)
     end

@@ -691,3 +691,48 @@ test('B42 getter-shaped minimap attaches after the main map without duplicate in
     getPlayerMiniMap = function(_) return outer end
   ` }), [true, true, 2, 'minimap', true]);
 });
+
+test('refreshAll attaches a main map created after the startup readiness window', () => {
+  assert.deepEqual(evaluateLua(`
+    MapUI.register()
+    MapUI._readyRetries = 120
+    ISWorldMap.ShowWorldMap(0)
+    return mapOpenCalls, #MapUI._adapters, MapUI._adapterByKey.main.mapUI == lateMain, mainSymbols.added, lateMain._sharedMapEnhancerContextHook == true
+  `, 5, { modules: ['mapAdapter', 'mapUI'], bootstrap: `
+    Events = {}
+    local function makeMap(bucket)
+      local api = { addTexture=function(_, icon, x, y) bucket.added=bucket.added+1; return {} end, removeSymbol=function() end }
+      return { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=function() return api end } end }, onRightMouseUp=function() return true end }
+    end
+    miniSymbols, mainSymbols = { added=0 }, { added=0 }
+    outer = { inner=makeMap(miniSymbols) }
+    lateMain = makeMap(mainSymbols)
+    mapOpenCalls = 0
+    ISWorldMap = { ShowWorldMap=function(_) mapOpenCalls=mapOpenCalls+1; ISWorldMap_instance=lateMain end }
+    getPlayerMiniMap = function(_) return outer end
+    Cache = { list=function() return { { id='persisted', category='Base', title='Camp', icon='House', color='white', x=1, y=2 } } end }
+  ` }), [1, 2, true, 1, true]);
+});
+
+test('refreshAll rebinds a replaced B42 minimap inner and hooks it once', () => {
+  assert.deepEqual(evaluateLua(`
+    MapUI.register()
+    MapUI.refreshAll()
+    outer.inner = replacement
+    local refreshed = MapUI.refreshAll()
+    replacement:onRightMouseUp(0, 0)
+    return refreshed, #MapUI._adapters, MapUI._adapterByKey.minimap.mapUI == replacement, firstSymbols.removed, replacementSymbols.added, replacementVanillaCalls, replacement._sharedMapEnhancerContextHook == true
+  `, 7, { modules: ['mapAdapter', 'mapUI'], bootstrap: `
+    Events = {}
+    local function makeMap(bucket, vanilla)
+      local api = { addTexture=function(_, icon, x, y) bucket.added=bucket.added+1; return {} end, removeSymbol=function() bucket.removed=bucket.removed+1 end }
+      return { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=function() return api end } end }, onRightMouseUp=vanilla }
+    end
+    firstSymbols, replacementSymbols = { added=0, removed=0 }, { added=0, removed=0 }
+    outer = { inner=makeMap(firstSymbols, function() return true end) }
+    replacementVanillaCalls = 0
+    replacement = makeMap(replacementSymbols, function() replacementVanillaCalls=replacementVanillaCalls+1; return true end)
+    getPlayerMiniMap = function(_) return outer end
+    Cache = { list=function() return { { id='persisted', category='Base', title='Camp', icon='House', color='white', x=1, y=2 } } end }
+  ` }), [true, 1, true, 1, 1, 1, true]);
+});
