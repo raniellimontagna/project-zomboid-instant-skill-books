@@ -125,8 +125,10 @@ function Settings.read()
         end
     end
 
-    settings.MedicineTypes = Settings.parseList(source.MedicineTypes)
-    settings.ConstructionTypes = Settings.parseList(source.ConstructionTypes)
+    for index = 1, #categories do
+        local category = categories[index]
+        settings[category .. "Types"] = Settings.parseList(source[category .. "Types"])
+    end
     return settings
 end
 

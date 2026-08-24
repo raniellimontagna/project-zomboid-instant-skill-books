@@ -181,31 +181,37 @@ function Classifier.matches(item, category, settings)
 end
 
 function Classifier.classify(item, settings)
-    if not validSettings(settings) then
-        return nil
-    end
+    local ok, result = pcall(function()
+        if not validSettings(settings) then
+            return nil
+        end
 
-    local priority = settings.CategoryPriority
-    if priority == nil then
-        priority = categories
-    end
-    local seen = {}
-    for index = 1, #priority do
-        local category = priority[index]
-        if not seen[category] then
-            seen[category] = true
-            if Classifier.matches(item, category, settings) then
+        local priority = settings.CategoryPriority
+        if priority == nil then
+            priority = categories
+        end
+        local seen = {}
+        for index = 1, #priority do
+            local category = priority[index]
+            if not seen[category] then
+                seen[category] = true
+                if Classifier.matches(item, category, settings) then
+                    return category
+                end
+            end
+        end
+        for index = 1, #categories do
+            local category = categories[index]
+            if not seen[category] and Classifier.matches(item, category, settings) then
                 return category
             end
         end
+        return nil
+    end)
+    if ok ~= true then
+        return nil
     end
-    for index = 1, #categories do
-        local category = categories[index]
-        if not seen[category] and Classifier.matches(item, category, settings) then
-            return category
-        end
-    end
-    return nil
+    return result
 end
 
 SmartStorage.Classifier = Classifier

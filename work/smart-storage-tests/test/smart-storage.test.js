@@ -81,8 +81,8 @@ function loadSmartStorage({ sandboxExpression = 'nil' } = {}) {
   return state;
 }
 
-function evaluateSmartStorage(script, resultCount) {
-  const state = loadSmartStorage();
+function evaluateSmartStorage(script, resultCount, options = {}) {
+  const state = loadSmartStorage(options);
   assert.equal(lauxlib.luaL_loadstring(state, to_luastring(script)), lua.LUA_OK);
   assert.equal(lua.lua_pcall(state, 0, resultCount, 0), lua.LUA_OK);
   const values = [];
@@ -119,11 +119,14 @@ test('Smart Storage classifies exact vanilla categories, tags, and explicit full
   const values = evaluateSmartStorage(`
     local defaults = SmartStorage.Settings.read()
     defaults.Weapons, defaults.Ammo, defaults.Farming = true, true, true
-    defaults.MedicineTypes = SmartStorage.Settings.parseList('Base.Pills, Base.Bandage')
     local food = { getCategory = function() return 'Food' end }
     local weapon = { getCategory = function() return 'Weapon' end }
     local ammo = { hasTag = function(_, tag) return tag == 'AMMO' end }
     local seed = { hasTag = function(_, tag) return tag == 'IS_SEED' end }
+    local foodAllowlist = {
+      getFullType = function() return 'Base.CustomFood' end,
+      getCategory = function() return 'Other' end,
+    }
     local medicine = {
       getFullType = function() return 'Base.Pills' end,
       getCategory = function() return 'Other' end,
@@ -132,9 +135,12 @@ test('Smart Storage classifies exact vanilla categories, tags, and explicit full
       SmartStorage.Classifier.classify(weapon, defaults),
       SmartStorage.Classifier.classify(ammo, defaults),
       SmartStorage.Classifier.classify(seed, defaults),
+      SmartStorage.Classifier.classify(foodAllowlist, defaults),
       SmartStorage.Classifier.classify(medicine, defaults)
-  `, 5);
-  assert.deepEqual(values, ['Food', 'Weapons', 'Ammo', 'Farming', 'Medicine']);
+  `, 6, {
+    sandboxExpression: `{ FoodTypes = 'Base.CustomFood', MedicineTypes = 'Base.Pills' }`,
+  });
+  assert.deepEqual(values, ['Food', 'Weapons', 'Ammo', 'Farming', 'Food', 'Medicine']);
 });
 
 test('Smart Storage resolves overlaps by active CategoryPriority', () => {
@@ -166,8 +172,23 @@ test('Smart Storage disables categories and fails closed for unknown or malforme
       SmartStorage.Classifier.classify(unknown, settings) == nil,
       ok, result == nil,
       SmartStorage.Classifier.matches(weapon, 'Weapons', malformed)
-  `, 4);
-  assert.deepEqual(values, [true, true, true, true]);
+  `, 5);
+  assert.deepEqual(values, [true, true, true, true, false]);
+});
+
+test('Smart Storage classifier fails closed for hostile settings metamethods', () => {
+  const values = evaluateSmartStorage(`
+    local item = { getCategory = function() return 'Food' end }
+    local hostile = setmetatable({}, {
+      __index = function() error('settings lookup unavailable') end,
+      __len = function() error('settings length unavailable') end,
+    })
+    local ok, result = pcall(function()
+      return SmartStorage.Classifier.classify(item, hostile)
+    end)
+    return ok, result == nil
+  `, 2);
+  assert.deepEqual(values, [true, true]);
 });
 
 test('Smart Storage never classifies from display names', () => {
