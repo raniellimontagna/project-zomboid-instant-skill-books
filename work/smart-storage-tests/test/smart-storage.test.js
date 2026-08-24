@@ -750,3 +750,48 @@ test('Smart Storage checks item-aware capacity and priority classification befor
   `, 6, { modules: ['selection', 'transfer'] });
   assert.deepEqual(values, [0, 1, 0, 1, 2, 0]);
 });
+
+test('Smart Storage treats a returned destination stack as a completed merge', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.FoodContainerTypes = { crate = true }
+    local sourceItems = {}
+    local source
+    source = {
+      getItems = function() return sourceItems end,
+      Remove = function(_, value) table.remove(sourceItems, 1); value.container = nil; return true end,
+      AddItem = function(_, value) sourceItems[#sourceItems + 1] = value; value.container = source; return value end,
+    }
+    local incoming = {
+      container = source,
+      getCategory = function() return 'Food' end,
+      getCondition = function() return 100 end,
+      getConditionMax = function() return 100 end,
+      getContainer = function(self) return self.container end,
+    }
+    sourceItems[1] = incoming
+    local stack = { merged = false }
+    local destinationItems = { stack }
+    local destination = {
+      getType = function() return 'crate' end,
+      getCapacity = function() return 10 end,
+      getContentsWeight = function() return 1 end,
+      isAccessible = function() return true end,
+      hasRoomFor = function() return true end,
+      getItems = function() return destinationItems end,
+      AddItem = function(_, value) stack.merged = value == incoming; return stack end,
+      Remove = function(_, value)
+        for index = 1, #destinationItems do
+          if destinationItems[index] == value then table.remove(destinationItems, index); return true end
+        end
+        return false
+      end,
+    }
+    local summary = SmartStorage.Transfer.deposit({}, {
+      category = 'Food', settings = settings, items = { incoming }, owned = { [source] = true },
+      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+    })
+    return summary.moved, summary.failed, #sourceItems, #destinationItems, stack.merged
+  `, 5, { modules: ['selection', 'transfer'] });
+  assert.deepEqual(values, [1, 0, 0, 1, true]);
+});

@@ -56,6 +56,36 @@ local function contains(container, item)
     return false
 end
 
+local function snapshot(container)
+    local ok, items = call(container, "getItems")
+    if not ok then return nil end
+    local result = { count = 0, items = {} }
+    if type(items) == "table" then
+        for index = 1, #items do
+            result.count = result.count + 1
+            result.items[items[index]] = true
+        end
+        return result
+    end
+    local sizeOk, size = call(items, "size")
+    if not sizeOk or type(size) ~= "number" or size < 0 then return nil end
+    for index = 0, size - 1 do
+        local itemOk, value = call(items, "get", index)
+        if not itemOk then return nil end
+        result.count = result.count + 1
+        result.items[value] = true
+    end
+    return result
+end
+
+local function unchanged(before, after)
+    if before == nil or after == nil or before.count ~= after.count then return false end
+    for item in pairs(before.items) do
+        if after.items[item] ~= true then return false end
+    end
+    return true
+end
+
 local function hasMethod(value, name)
     local ok, method = pcall(function() return value[name] end)
     return ok and type(method) == "function"
@@ -77,6 +107,15 @@ local function restore(item, source, destination)
         and contains(source, item)
 end
 
+local function canRestoreOriginal(item, destination, before)
+    if contains(destination, item) then return true end
+    local after = snapshot(destination)
+    -- If the destination was empty and remains empty, the failed add cannot
+    -- have merged into a pre-existing stack.  Any non-empty unchanged snapshot
+    -- is ambiguous, so leave it untouched rather than duplicate a merge.
+    return before ~= nil and before.count == 0 and unchanged(before, after)
+end
+
 local function move(player, item, destination)
     local ok, source = call(item, "getContainer")
     if not ok or source == nil or not contains(source, item)
@@ -90,6 +129,8 @@ local function move(player, item, destination)
         or not hasMethod(destination, "AddItem") or not hasMethod(destination, "Remove") then
         return false
     end
+    local destinationBefore = snapshot(destination)
+    if destinationBefore == nil then return false end
 
     -- ItemContainer:Remove(InventoryItem) and AddItem(InventoryItem) are the
     -- vanilla object-transfer calls.  Passing the existing item object avoids
@@ -102,13 +143,22 @@ local function move(player, item, destination)
         if not contains(source, item) then restore(item, source, destination) end
         return false
     end
-    if not successfulCall(destination, "AddItem", item) or not contains(destination, item) then
-        restore(item, source, destination)
-        return false
+    local addOk, destinationItem = call(destination, "AddItem", item)
+    local itemType = type(destinationItem)
+    if addOk and (itemType == "table" or itemType == "userdata") and contains(destination, destinationItem) then
+        call(source, "setDrawDirty", true)
+        call(destination, "setDrawDirty", true)
+        return true
     end
-    call(source, "setDrawDirty", true)
-    call(destination, "setDrawDirty", true)
-    return true
+    if addOk and destinationItem == nil and contains(destination, item) then
+        call(source, "setDrawDirty", true)
+        call(destination, "setDrawDirty", true)
+        return true
+    end
+    if canRestoreOriginal(item, destination, destinationBefore) then
+        restore(item, source, destination)
+    end
+    return false
 end
 
 function Transfer.deposit(player, request)
