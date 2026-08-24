@@ -112,7 +112,7 @@ function Validation.normalizeUpdate(args, existing, now, limits)
     return result, nil
 end
 
-function Validation.isValidMarker(marker, now)
+function Validation.isValidMarker(marker, now, limits)
     local allowed = { id=true, category=true, title=true, note=true, icon=true, color=true, x=true, y=true, z=true, createdBy=true, createdAt=true, expiresAt=true, revision=true }
     if type(marker) ~= "table" or getmetatable(marker) ~= nil then return false, "invalid_request" end
     for key in pairs(marker) do if not allowed[key] then return false, "invalid_request" end end
@@ -123,7 +123,8 @@ function Validation.isValidMarker(marker, now)
     if safeString(marker.title, 1, 80) == nil then return false, "invalid_text" end
     if marker.note ~= nil and type(marker.note) ~= "string" then return false, "invalid_text" end
     if safeString(marker.note or "", 0, 240) == nil then return false, "invalid_text" end
-    if not coordinate(marker.x, nil, "X") or not coordinate(marker.y, nil, "Y") or not coordinate(marker.z, nil, "Z") then return false, "invalid_coordinates" end
+    limits = limits or C.mapBounds
+    if not coordinate(marker.x, limits, "X") or not coordinate(marker.y, limits, "Y") or not coordinate(marker.z, limits, "Z") then return false, "invalid_coordinates" end
     if marker.expiresAt ~= nil and (not finiteNumber(marker.expiresAt) or marker.expiresAt <= now) then return false, "expired" end
     return true, nil
 end

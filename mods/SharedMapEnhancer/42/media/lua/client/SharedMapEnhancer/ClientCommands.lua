@@ -42,13 +42,20 @@ function ClientCommands.lastError() return ClientCommands._lastError end
 
 local function onServerCommand(module, command, payload)
     if module ~= "SharedMapEnhancer" or type(payload) ~= "table" then return end
-    if command == "response" then command = payload.kind end
+    if command == "response" then
+        command = payload.kind
+        if command == "snapshot" then payload = { requestId=payload.requestId, revision=payload.revision, markers=payload.markers }
+        elseif command == "delta" then payload = { requestId=payload.requestId, revision=payload.revision, operation=payload.operation, marker=payload.marker, id=payload.id }
+        elseif command == "error" then payload = { requestId=payload.requestId, code=payload.code } end
+    end
     if command == "snapshot" then
         local ok, reason = Cache.reset(payload)
-        if not ok then ClientCommands._lastError = reason; ClientCommands.requestSnapshot() end
+        if not ok then ClientCommands._lastError = reason; ClientCommands.requestSnapshot()
+        elseif type(MapUI) == "table" and type(MapUI.refreshAll) == "function" then pcall(MapUI.refreshAll) end
     elseif command == "delta" then
         local ok, reason = Cache.applyDelta(payload)
-        if not ok then ClientCommands._lastError = reason; if reason == "revision_gap" or reason == "invalid_response" then ClientCommands.requestSnapshot() end end
+        if not ok then ClientCommands._lastError = reason; if reason == "revision_gap" or reason == "invalid_response" then ClientCommands.requestSnapshot() end
+        elseif type(MapUI) == "table" and type(MapUI.refreshAll) == "function" then pcall(MapUI.refreshAll) end
     elseif command == "error" then
         ClientCommands._lastError = type(payload.code) == "string" and payload.code or "invalid_response"
     end

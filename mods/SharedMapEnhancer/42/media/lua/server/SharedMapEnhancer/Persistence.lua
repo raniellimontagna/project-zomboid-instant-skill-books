@@ -1,6 +1,7 @@
 local Persistence = {}
 local namespace = "SharedMapEnhancer"
 local registry
+local C = Constants
 
 local function nowValue(now)
     if type(now) == "number" then return now end
@@ -58,7 +59,7 @@ function Persistence.load(now)
     local retained, changed = {}, false
     local current = nowValue(now)
     for id, marker in pairs(source) do
-        local valid = type(Validation) == "table" and type(Validation.isValidMarker) == "function" and Validation.isValidMarker(marker, current)
+        local valid = type(Validation) == "table" and type(Validation.isValidMarker) == "function" and Validation.isValidMarker(marker, current, C and C.mapBounds)
         if valid and type(id) == "string" and marker.id == id then retained[id] = marker else changed = true end
     end
     local list = ordered(retained)
@@ -108,12 +109,17 @@ end
 
 function Persistence.cleanup(now)
     local data = ensure(now)
-    local current, changed = nowValue(now), false
+    local current, changed, removed = nowValue(now), false, {}
     for id, marker in pairs(data.markers) do
-        if type(marker) ~= "table" or (marker.expiresAt ~= nil and marker.expiresAt <= current) then data.markers[id] = nil; changed = true end
+        if type(marker) ~= "table" or (marker.expiresAt ~= nil and marker.expiresAt <= current) then
+            data.markers[id] = nil
+            data.revision = data.revision + 1
+            removed[#removed + 1] = { id = id, revision = data.revision }
+            changed = true
+        end
     end
-    if changed then data.revision = data.revision + 1; transmit() end
-    return changed
+    if changed then transmit() end
+    return changed, removed
 end
 
 function Persistence.revision()

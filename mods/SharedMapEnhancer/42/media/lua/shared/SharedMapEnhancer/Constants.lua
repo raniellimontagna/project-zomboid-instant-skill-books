@@ -3,6 +3,9 @@ local Constants = {
     colors = { "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple" },
     icons = { "House", "Target", "Skull", "SteeringWheel", "MedCross", "Fuel", "Tent", "Question", "Star", "Cross", "Exclamation" },
     durations = { "permanent", "1h", "8h", "24h", "7d" },
+    -- Conservative official B42 world-coordinate envelope.  Keep this shared so
+    -- persisted data, server requests, and client responses agree on one trust boundary.
+    mapBounds = { minX = 0, maxX = 30000, minY = 0, maxY = 30000, minZ = -32, maxZ = 32 },
 }
 
 Constants.categorySet = {}

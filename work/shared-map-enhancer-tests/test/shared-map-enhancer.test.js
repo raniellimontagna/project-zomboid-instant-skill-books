@@ -272,6 +272,20 @@ test('normalization preserves server fields during update and enforces marker li
   assert.deepEqual(evaluateLua(`local m, r = Validation.normalizeCreate(${validCreate}, 1000, { markerCount = 500, maxMarkers = 500 }); return m, r`, 2, { modules: ['constants', 'validation'] }), [null, 'limit_reached']);
 });
 
+test('trusted B42 map bounds apply to create, persisted markers, and client snapshots', () => {
+  assert.deepEqual(evaluateLua(`
+    local low = ${validCreate}; low.x, low.y, low.z = Constants.mapBounds.minX, Constants.mapBounds.minY, Constants.mapBounds.minZ
+    local high = ${validCreate}; high.x, high.y, high.z = Constants.mapBounds.maxX, Constants.mapBounds.maxY, Constants.mapBounds.maxZ
+    local outside = ${validCreate}; outside.x = Constants.mapBounds.maxX + 1
+    local a, ar = Validation.normalizeCreate(low, 1000, Constants.mapBounds)
+    local b, br = Validation.normalizeCreate(high, 1000, Constants.mapBounds)
+    local c, cr = Validation.normalizeCreate(outside, 1000, Constants.mapBounds)
+    local marker = { id='far', category='Base', title='Far', note='', icon='House', color='green', x=Constants.mapBounds.maxX + 1, y=0, z=0, createdBy='p', createdAt=1, revision=1 }
+    local valid, reason = Validation.isValidMarker(marker, 0, Constants.mapBounds)
+    return a ~= nil, b ~= nil, c, cr, valid, reason
+  `, 6, { modules: ['constants', 'validation'] }), [true, true, null, 'invalid_coordinates', false, 'invalid_coordinates']);
+});
+
 const serverFixture = `
   ModData = { records = {}, getOrCreate = function(name)
     local r = ModData.records[name]; if r == nil then r = { schemaVersion = 1, revision = 0, markers = {} }; ModData.records[name] = r end; return r
@@ -381,18 +395,43 @@ test('cleanup removes expired markers and transmits one revision', () => {
   `, 4, { modules: ['constants', 'validation', 'persistence'], bootstrap: serverFixture }), [true, true, true, 'SharedMapEnhancer']);
 });
 
-test('live event adapter fails closed when absent and forwards one sanitized response when present', () => {
+test('live event adapter fails closed when absent and targets sanitized snapshots when present', () => {
   assert.deepEqual(evaluateLua(`
     return Events == nil, sendServerCommand == nil
   `, 2, { modules: ['constants', 'validation', 'persistence', 'server'] }), [true, true]);
   assert.deepEqual(evaluateLua(`
-    Events.OnClientCommand.handler('SharedMapEnhancer', 'create', player, { requestId='evt1', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='permanent' })
-    return registered == 1, sent.module, sent.command, sent.response.kind, sent.response.marker.createdBy, type(sent.response.marker.createdAt) == 'number', sent.response.marker.revision == 1
-  `, 7, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture + `
+    Events.OnClientCommand.handler('SharedMapEnhancer', 'request', player, { requestId='evt1' })
+    return registered == 1, sent.module, sent.command, sent.response.requestId, sent.response.revision, #sent.response.markers
+  `, 6, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture + `
     registered = 0; sent = nil
     Events = { OnClientCommand = { Add = function(handler) registered = registered + 1; Events.OnClientCommand.handler = handler end } }
     sendServerCommand = function(_, module, command, response) sent = { module=module, command=command, response=response } end
-  ` }), [true, 'SharedMapEnhancer', 'response', 'delta', 'alice', true, true]);
+  ` }), [true, 'SharedMapEnhancer', 'snapshot', 'evt1', 0, '0']);
+});
+
+test('live server adapter broadcasts each accepted delta exactly once and targets snapshots/errors', () => {
+  assert.deepEqual(evaluateLua(`
+    local create = { requestId='create', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, duration='1h' }
+    clock = 100; Events.OnClientCommand.handler('SharedMapEnhancer', 'create', player, create)
+    clock = 101; Events.OnClientCommand.handler('SharedMapEnhancer', 'create', player, create)
+    local id = broadcasts[1].payload.marker.id
+    clock = 102; Events.OnClientCommand.handler('SharedMapEnhancer', 'update', player, { requestId='update', id=id, category='Loot', title='Loot', note='', icon='Tent', color='red', duration='1h' })
+    clock = 104; Events.OnClientCommand.handler('SharedMapEnhancer', 'remove', player, { requestId='remove', id=id })
+    clock = 106; Events.OnClientCommand.handler('SharedMapEnhancer', 'request', player, { requestId='snapshot' })
+    clock = 108; Events.OnClientCommand.handler('SharedMapEnhancer', 'create', player, { requestId='expired', category='Base', title='Old', note='', icon='House', color='green', x=1, y=2, z=0, duration='1h' })
+    Server.cleanupExpired(7200)
+    return #broadcasts, broadcasts[1].module, broadcasts[1].command, broadcasts[1].payload.operation,
+      broadcasts[2].payload.operation, broadcasts[3].payload.operation, broadcasts[4].payload.operation, broadcasts[5].payload.operation,
+      #targeted, targeted[1].command, targeted[1].player == player
+  `, 11, { modules: ['constants', 'validation', 'persistence', 'server'], bootstrap: serverFixture + `
+    broadcasts, targeted = {}, {}
+    Events = { OnClientCommand = { Add = function(handler) Events.OnClientCommand.handler = handler end } }
+    os.time = function() return clock end
+    sendServerCommand = function(a, b, c, d)
+      if d == nil then table.insert(broadcasts, { module=a, command=b, payload=c })
+      else table.insert(targeted, { player=a, module=b, command=c, payload=d }) end
+    end
+  ` }), [5, 'SharedMapEnhancer', 'delta', 'create', 'update', 'remove', 'create', 'remove', 1, 'snapshot', true]);
 });
 
 const clientFixture = `
@@ -476,6 +515,28 @@ test('client adapter requests a snapshot after rejected snapshot and preserves p
   ` }), [1, 'Seed', 'request']);
 });
 
+test('confirmed snapshots and create/update/remove deltas refresh attached maps without touching vanilla symbols', () => {
+  assert.deepEqual(evaluateLua(`
+    MapUI.register()
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'snapshot', { revision=1, markers={} })
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'delta', { revision=2, operation='create', marker={ id='m', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=2 } })
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'delta', { revision=3, operation='update', marker={ id='m', category='Loot', title='Loot', note='', icon='Tent', color='red', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=3 } })
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'delta', { revision=4, operation='remove', id='m' })
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'delta', { revision=5, operation='create', marker={ id='expired', category='Base', title='Old', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=5 } })
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'delta', { revision=6, operation='remove', id='expired' })
+    return main.added, mini.added, main.removedOwned, mini.removedOwned, main.removedVanilla, mini.removedVanilla, main.vanilla == true, mini.vanilla == true
+  `, 8, { modules: ['constants', 'validation', 'cache', 'mapAdapter', 'mapUI', 'clientCommands'], bootstrap: clientFixture + `
+    Events = { OnServerCommand = { Add = function(handler) Events.OnServerCommand.handler = handler end } }
+    local function makeMap(bucket)
+      local api = { addTexture=function(_, icon, x, y) bucket.added = bucket.added + 1; return { setRGBA=function() end, setAnchor=function() end, setScale=function() end, setText=function() end } end,
+        removeSymbol=function() bucket.removedOwned = bucket.removedOwned + 1 end }
+      return { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=function() return api end } end } }
+    end
+    main, mini = { added=0, removedOwned=0, removedVanilla=0, vanilla=true }, { added=0, removedOwned=0, removedVanilla=0, vanilla=true }
+    mapUI, minimap = makeMap(main), makeMap(mini)
+  ` }), [3, 3, 3, 3, 0, 0, true, true]);
+});
+
 const mapFixture = `
   symbols = { added = {}, removedOwned = 0, removedVanilla = 0, vanilla = {} }
   local function symbol(icon, x, y)
@@ -550,4 +611,30 @@ test('map UI refreshAll shares cache records while honoring independent filters'
     } end }
     MapUI = nil
   ` }), [true, true, true]);
+});
+
+test('map UI context flow converts coordinates, sends only confirmed-cache intents, and never draws optimistically', () => {
+  assert.deepEqual(evaluateLua(`
+    MapUI.setFormFactory(function(form) captured = form; return true end)
+    local context = { options={}, addOption=function(self, label, target, callback, ...) table.insert(self.options, { label=label, target=target, callback=callback, args={...} }) end }
+    local marker = { id='confirmed', category='Base', title='Old', note='', icon='House', color='green', x=120, y=340, z=2, createdBy='p', createdAt=1, revision=1 }
+    Cache.reset({ revision=1, markers={ marker } })
+    local before = symbols.added
+    MapUI.addContextOptions(interactionMap, 'main', 12, 34, context)
+    context.options[1].callback(MapUI, (table.unpack or unpack)(context.options[1].args))
+    captured.submit({ category='Loot', title='New', note='', icon='Tent', color='red', duration='1h' })
+    local created = sent
+    context.options[2].callback(MapUI, (table.unpack or unpack)(context.options[2].args))
+    captured.submit({ category='Base', title='Changed', note='', icon='House', color='green', duration='permanent' })
+    local updated = sent
+    context.options[3].callback(MapUI, (table.unpack or unpack)(context.options[3].args))
+    local removed = sent
+    return #context.options, created.command, created.args.x, created.args.y, created.args.z, created.args.id == nil,
+      updated.command, updated.args.id, removed.command, removed.args.id, symbols.added == before
+  `, 11, { modules: ['constants', 'validation', 'cache', 'clientCommands', 'mapAdapter', 'mapUI'], bootstrap: clientFixture + `
+    symbols = { added=0 }
+    interactionMap = { mapAPI={ uiToWorldX=function(_, x, y) return x * 10 end, uiToWorldY=function(_, x, y) return y * 10 end }, playerNum=0 }
+    function interactionMap:getAbsoluteX() return 0 end; function interactionMap:getAbsoluteY() return 0 end
+    getSpecificPlayer = function() return { getZ=function() return 2 end } end
+  ` }), [3, 'create', 120, 340, 2, true, 'update', 'confirmed', 'remove', 'confirmed', true]);
 });
