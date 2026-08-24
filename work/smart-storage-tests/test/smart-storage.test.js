@@ -2,11 +2,19 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const zlib = require('node:zlib');
 
 const { lauxlib, lua, lualib, to_luastring } = require('fengari');
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 const smartStorageRoot = path.join(repositoryRoot, 'mods/SmartStorage');
+const rootReadmePath = path.join(repositoryRoot, 'README.md');
+const instantSkillBooksReadmePath = path.join(repositoryRoot, 'mods/InstantSkillBooks/README.md');
+const roadmapPath = path.join(
+  repositoryRoot,
+  'docs/superpowers/specs/2026-08-23-coop-quality-of-life-roadmap.md',
+);
+const releaseZipPath = path.join(repositoryRoot, 'outputs/SmartStorage-0.1.0.zip');
 const metadataPath = path.join(smartStorageRoot, '42/mod.info');
 const readmePath = path.join(smartStorageRoot, 'README.md');
 const settingsPath = path.join(
@@ -68,6 +76,64 @@ function readMetadata(filePath) {
   );
 }
 
+function readZipFiles(filePath) {
+  const archive = fs.readFileSync(filePath);
+  const endOfCentralDirectory = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+  const endOffset = archive.lastIndexOf(endOfCentralDirectory);
+  assert.notEqual(endOffset, -1, 'ZIP has an end-of-central-directory record');
+
+  const entryCount = archive.readUInt16LE(endOffset + 10);
+  let offset = archive.readUInt32LE(endOffset + 16);
+  const entries = new Map();
+  for (let index = 0; index < entryCount; index += 1) {
+    assert.equal(archive.readUInt32LE(offset), 0x02014b50, 'ZIP has a central-directory entry');
+    const compressionMethod = archive.readUInt16LE(offset + 10);
+    const compressedSize = archive.readUInt32LE(offset + 20);
+    const uncompressedSize = archive.readUInt32LE(offset + 24);
+    const nameLength = archive.readUInt16LE(offset + 28);
+    const extraLength = archive.readUInt16LE(offset + 30);
+    const commentLength = archive.readUInt16LE(offset + 32);
+    const localHeaderOffset = archive.readUInt32LE(offset + 42);
+    const name = archive.subarray(offset + 46, offset + 46 + nameLength).toString('utf8');
+    assert.equal(archive.readUInt32LE(localHeaderOffset), 0x04034b50, 'ZIP has a local-file entry');
+    const localNameLength = archive.readUInt16LE(localHeaderOffset + 26);
+    const localExtraLength = archive.readUInt16LE(localHeaderOffset + 28);
+    const dataOffset = localHeaderOffset + 30 + localNameLength + localExtraLength;
+    const compressedData = archive.subarray(dataOffset, dataOffset + compressedSize);
+    const contents = compressionMethod === 0
+      ? compressedData
+      : compressionMethod === 8
+        ? zlib.inflateRawSync(compressedData)
+        : assert.fail(`unsupported ZIP compression method ${compressionMethod}`);
+    assert.equal(contents.length, uncompressedSize, `${name} extracts to its recorded size`);
+    entries.set(name, contents);
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+function readZipEntries(filePath) {
+  return [...readZipFiles(filePath).keys()].sort();
+}
+
+function smartStorageSourceEntries() {
+  const sourceRoot = path.join(smartStorageRoot, '42');
+  const sourceEntries = [];
+  function visit(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(entryPath);
+      else if (entry.isFile()) {
+        sourceEntries.push(
+          path.posix.join('SmartStorage', path.relative(smartStorageRoot, entryPath).replaceAll(path.sep, '/')),
+        );
+      }
+    }
+  }
+  visit(sourceRoot);
+  return sourceEntries.sort();
+}
+
 test('Smart Storage declares its exact independent Build 42 identity', () => {
   assert.equal(fs.existsSync(metadataPath), true, '42/mod.info exists');
   assert.deepEqual(readMetadata(metadataPath), {
@@ -84,6 +150,79 @@ test('Smart Storage documents that its Workshop item is created separately', () 
   const readme = fs.readFileSync(readmePath, 'utf8');
   assert.match(readme, /no Workshop manifest/i);
   assert.match(readme, /user creates its item/i);
+});
+
+test('Smart Storage release documentation indexes both mods and documents every server setting', () => {
+  const rootReadme = fs.readFileSync(rootReadmePath, 'utf8');
+  const instantSkillBooksReadme = fs.readFileSync(instantSkillBooksReadmePath, 'utf8');
+  const smartStorageReadme = fs.readFileSync(readmePath, 'utf8');
+
+  assert.match(rootReadme, /## Available mods/);
+  assert.match(rootReadme, /\[Instant Skill Books\]\(mods\/InstantSkillBooks\/README\.md\)/);
+  assert.match(rootReadme, /\[Smart Storage\]\(mods\/SmartStorage\/README\.md\)/);
+  assert.match(instantSkillBooksReadme, /3786090811/);
+  assert.match(instantSkillBooksReadme, /WorkshopItems=3786090811/);
+  assert.match(smartStorageReadme, /server-authoritative/i);
+  assert.match(smartStorageReadme, /\*ItemTypes.*full item types/i);
+  assert.match(smartStorageReadme, /\*ContainerTypes.*container types/i);
+
+  const options = fs.readFileSync(sandboxOptionsPath, 'utf8');
+  for (const match of options.matchAll(/option SmartStorage\.([A-Za-z]+) \{ type = \w+, default = (true|false|\d+|"[^"]*"),/g)) {
+    const [, option, defaultValue] = match;
+    assert.match(smartStorageReadme, new RegExp('`SmartStorage\\.' + option + '`'));
+    assert.match(smartStorageReadme, new RegExp('`' + defaultValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '`'));
+  }
+});
+
+test('Smart Storage release documentation records implementation while retaining live follow-ups', () => {
+  const roadmap = fs.readFileSync(roadmapPath, 'utf8');
+  const smartStorageReadme = fs.readFileSync(readmePath, 'utf8');
+  assert.match(roadmap, /Smart Storage B42.*implemented/i);
+  assert.match(roadmap, /Workshop upload.*follow-up/i);
+  assert.match(roadmap, /two-client.*follow-up/i);
+  assert.match(smartStorageReadme, /two clients/i);
+  assert.match(smartStorageReadme, /Workshop upload/i);
+});
+
+test('Smart Storage release ZIP exactly packages its Build 42 source tree', () => {
+  assert.equal(fs.existsSync(releaseZipPath), true, 'release ZIP exists');
+  const files = readZipFiles(releaseZipPath);
+  const entries = readZipEntries(releaseZipPath);
+  assert.deepEqual(entries, smartStorageSourceEntries());
+  for (const entry of entries) {
+    const sourcePath = path.join(
+      smartStorageRoot,
+      entry.replace(/^SmartStorage\//, '').replaceAll('/', path.sep),
+    );
+    assert.deepEqual(files.get(entry), fs.readFileSync(sourcePath), `${entry} matches the source package`);
+  }
+  assert.equal(files.get('SmartStorage/42/mod.info').toString('utf8'), [
+    'name=Smart Storage B42',
+    'id=SmartStorage',
+    'modversion=0.1.0',
+    'pzversion=42.20',
+    'versionMin=42.20.0',
+    '',
+  ].join('\n'));
+  for (const requiredPath of [
+    'SmartStorage/42/mod.info',
+    'SmartStorage/42/media/sandbox-options.txt',
+    'SmartStorage/42/media/lua/shared/SmartStorage/Settings.lua',
+    'SmartStorage/42/media/lua/shared/SmartStorage/Classifier.lua',
+    'SmartStorage/42/media/lua/shared/SmartStorage/Protection.lua',
+    'SmartStorage/42/media/lua/shared/SmartStorage/Selection.lua',
+    'SmartStorage/42/media/lua/server/SmartStorage/Server.lua',
+    'SmartStorage/42/media/lua/server/SmartStorage/Transfer.lua',
+    'SmartStorage/42/media/lua/client/SmartStorage/ContextMenu.lua',
+    'SmartStorage/42/media/lua/client/SmartStorage/ClientCommands.lua',
+    'SmartStorage/42/media/lua/client/SmartStorage/Result.lua',
+  ]) {
+    assert.ok(entries.includes(requiredPath), `${requiredPath} is packaged`);
+  }
+  for (const entry of entries) {
+    assert.match(entry, /^SmartStorage\/42\//, `${entry} remains inside the mod layout`);
+    assert.doesNotMatch(entry, /(?:^|\/)(?:test|tests|node_modules|docs|\.worktrees|\.superpowers)(?:\/|$)|workshop\.txt$/i);
+  }
 });
 
 test('Smart Storage test package can execute Fengari Lua fixtures', () => {

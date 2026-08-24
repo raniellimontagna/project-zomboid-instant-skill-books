@@ -1,6 +1,6 @@
 # Coop Quality-of-Life Mods — Future Roadmap
 
-> Status: documented for later implementation. This roadmap does not change the current Instant Learning implementation.
+> Status: Smart Storage B42 is implemented as a local Build 42.20+ package with automated contract coverage. Workshop upload and two-client live acceptance are explicit follow-up work; Shared Map Enhancer remains planned. This roadmap does not change the current Instant Learning implementation.
 
 ## Context
 
@@ -9,6 +9,12 @@ The target play style is small cooperative sessions played with friends over Dis
 Both mods must target Project Zomboid Build 42.20+ and keep all state-changing operations server-authoritative. The client may present the UI and request an action; the server validates the request and persists the result.
 
 ## 1. Smart Storage B42
+
+### Implementation status
+
+Smart Storage B42 is implemented in `mods/SmartStorage/` and packaged locally as `outputs/SmartStorage-0.1.0.zip`. The local package deliberately has no Workshop manifest or Workshop ID.
+
+Follow-up: create and upload the separate Workshop item, then record its assigned ID. Follow-up: run the B42.20+ live acceptance session with two clients before treating the release as multiplayer-validated.
 
 ### Goal
 
@@ -82,7 +88,7 @@ Synchronize useful map information between coop players without turning the map 
 ## Recommended order
 
 1. Finish and validate the current Instant Learning improvement.
-2. Implement Smart Storage B42 as a standalone mod.
-3. Validate Smart Storage in a two-player coop session.
+2. Complete — Smart Storage B42 is implemented as a standalone local mod and package.
+3. Follow-up — validate Smart Storage in a two-client coop session and then perform its separate Workshop upload.
 4. Implement Shared Map Enhancer B42 as a standalone mod.
 5. Validate marker persistence, joining-player synchronization, and cleanup in coop.
