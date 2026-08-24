@@ -254,6 +254,19 @@ function loadSmartStorage({ sandboxExpression = 'nil', modules = [], bootstrap: 
       if type(value) == 'string' then error('production passed a string ItemTag') end
       return value == expected
     end
+    makeWorldCandidate = function(container, x, y, z, distance, accessible)
+      local square, object
+      object = {
+        getContainer = function() return container end,
+        getSquare = function() return square end,
+      }
+      square = { getObjects = function() return { object } end }
+      container.getParent = function() return object end
+      return {
+        container = container, object = object, square = square,
+        x = x, y = y, z = z, distance = distance, accessible = accessible,
+      }
+    end
     ${extraBootstrap}
   `;
   assert.equal(lauxlib.luaL_loadstring(state, to_luastring(bootstrap)), lua.LUA_OK);
@@ -586,29 +599,50 @@ test('Smart Storage selects the nearest compatible accessible destination determ
   const values = evaluateSmartStorage(`
     local settings = SmartStorage.Settings.read()
     settings.FoodContainerTypes = { crate = true }
-    local function container(typeName, capacity, used, access)
+    local function container(typeName, capacity, used)
       return {
         getType = function() return typeName end,
         getCapacity = function() return capacity end,
         getContentsWeight = function() return used end,
-        isAccessible = function() return access end,
       }
     end
-    local a = container('crate', 10, 0, true)
-    local b = container('crate', 10, 0, true)
-    local rejectedType = container('counter', 10, 0, true)
-    local rejectedCapacity = container('crate', 1, 1, true)
-    local rejectedAccess = container('crate', 10, 0, false)
+    local a = container('crate', 10, 0)
+    local b = container('crate', 10, 0)
+    local rejectedType = container('counter', 10, 0)
+    local rejectedCapacity = container('crate', 1, 1)
+    local rejectedAccess = container('crate', 10, 0)
     local selected = SmartStorage.Selection.choose({
-      { container = rejectedType, x = 0, y = 0, z = 0, distance = 0 },
-      { container = rejectedCapacity, x = 0, y = 0, z = 0, distance = 0 },
-      { container = rejectedAccess, x = 0, y = 0, z = 0, distance = 0 },
-      { container = b, x = 2, y = 1, z = 0, distance = 2 },
-      { container = a, x = 1, y = 2, z = 0, distance = 2 },
+      makeWorldCandidate(rejectedType, 0, 0, 0, 0, true),
+      makeWorldCandidate(rejectedCapacity, 0, 0, 0, 0, true),
+      makeWorldCandidate(rejectedAccess, 0, 0, 0, 0, false),
+      makeWorldCandidate(b, 2, 1, 0, 2, true),
+      makeWorldCandidate(a, 1, 2, 0, 2, true),
     }, 'Food', settings, {})
     return selected == a
   `, 1, { modules: ['selection'] });
   assert.deepEqual(values, [true]);
+});
+
+test('Smart Storage selection requires a server-derived access flag and never calls ItemContainer:isAccessible', () => {
+  const selection = fs.readFileSync(selectionPath, 'utf8');
+  assert.doesNotMatch(selection, /isAccessible/);
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.FoodContainerTypes = { crate = true }
+    local container = {
+      getType = function() return 'crate' end,
+      getCapacity = function() return 10 end,
+      getContentsWeight = function() return 0 end,
+    }
+    local accepted = SmartStorage.Selection.choose({
+      makeWorldCandidate(container, 0, 0, 0, 0, true),
+    }, 'Food', settings, {})
+    local rejected = SmartStorage.Selection.choose({
+      makeWorldCandidate(container, 0, 0, 0, 0, nil),
+    }, 'Food', settings, {})
+    return accepted == container, rejected == nil
+  `, 2, { modules: ['selection'] });
+  assert.deepEqual(values, [true, true]);
 });
 
 test('Smart Storage rejects destinations outside the configured radius and breaks equal distances by x y z', () => {
@@ -620,14 +654,13 @@ test('Smart Storage rejects destinations outside the configured radius and break
       getType = function() return 'crate' end,
       getCapacity = function() return 10 end,
       getContentsWeight = function() return 0 end,
-      isAccessible = function() return true end,
     } end
     local first, second, third, outside = c(), c(), c(), c()
     local selected = SmartStorage.Selection.choose({
-      { container = outside, x = 4, y = 0, z = 0, distance = 4 },
-      { container = third, x = 1, y = 0, z = 1, distance = 2 },
-      { container = second, x = 1, y = 1, z = 0, distance = 2 },
-      { container = first, x = 1, y = 0, z = 0, distance = 2 },
+      makeWorldCandidate(outside, 4, 0, 0, 4, true),
+      makeWorldCandidate(third, 1, 0, 1, 2, true),
+      makeWorldCandidate(second, 1, 1, 0, 2, true),
+      makeWorldCandidate(first, 1, 0, 0, 2, true),
     }, 'Food', settings, {})
     return selected == first
   `, 1, { modules: ['selection'] });
@@ -678,7 +711,6 @@ test('Smart Storage revalidates each transfer and returns deterministic outcome 
       getType = function() return 'crate' end,
       getCapacity = function() return 10 end,
       getContentsWeight = function() return #destinationItems end,
-      isAccessible = function() return true end,
       hasRoomFor = function() return true end,
       getItems = function() return destinationItems end,
       AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
@@ -705,7 +737,7 @@ test('Smart Storage revalidates each transfer and returns deterministic outcome 
     local mismatched = item('Weapon', false)
     local summary = SmartStorage.Transfer.deposit({}, {
       category = 'Food', settings = settings, items = { allowed, protected, mismatched },
-      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+      candidates = { makeWorldCandidate(destination, 0, 0, 0, 0, true) },
       requestId = 'transfer-1',
     })
     return summary.moved, summary.protected, summary.noDestination, summary.failed,
@@ -733,7 +765,6 @@ test('Smart Storage server handler only moves player-owned bag items and caps ea
       getType = function() return 'crate' end,
       getCapacity = function() return 10 end,
       getContentsWeight = function() return #destinationItems end,
-      isAccessible = function() return true end,
       hasRoomFor = function() return true end,
       getItems = function() return destinationItems end,
       AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
@@ -744,14 +775,24 @@ test('Smart Storage server handler only moves player-owned bag items and caps ea
         return false
       end,
     }
-    local worldObject = { getContainer = function() return destination end }
-    local square = { getObjects = function() return { worldObject } end }
+    local square
+    local worldObject = {
+      getContainer = function() return destination end,
+      getSquare = function() return square end,
+    }
+    destination.getParent = function() return worldObject end
+    square = {
+      getObjects = function() return { worldObject } end,
+      isBlockedTo = function() return false end,
+      isWindowTo = function() return false end,
+    }
     local player = {
       getInventory = function() return source end,
       getCell = function() return { getGridSquare = function(_, x, y, z)
         if x == 0 and y == 0 and z == 0 then return square end
       end } end,
       getX = function() return 0 end, getY = function() return 0 end, getZ = function() return 0 end,
+      getCurrentSquare = function() return square end,
     }
     Events.OnClientCommand.handler('SmartStorage', 'deposit', player, { category = 'Food', requestId = 'owned-1' })
     return #destinationItems, sent.module, sent.command, sent.summary.moved,
@@ -770,6 +811,132 @@ test('Smart Storage server handler only moves player-owned bag items and caps ea
   assert.deepEqual(values, [1, 'SmartStorage', 'result', 1, 0, 0, 0]);
 });
 
+test('Smart Storage accepts an ordinary accessible world container through the target-square B42 access seam', () => {
+  const values = evaluateSmartStorage(`
+    local sourceItems, destinationItems = {}, {}
+    local source = {
+      getItems = function() return sourceItems end,
+      Remove = function(_, item) if sourceItems[1] == item then sourceItems[1] = nil; return true end end,
+      AddItem = function(_, item) sourceItems[1] = item; return item end,
+    }
+    local food = {
+      getCategory = function() return 'Food' end,
+      getCondition = function() return 100 end,
+      getConditionMax = function() return 100 end,
+      getContainer = function() return source end,
+    }
+    sourceItems[1] = food
+    local destination = {
+      getType = function() return 'crate' end,
+      getCapacity = function() return 10 end,
+      getContentsWeight = function() return #destinationItems end,
+      hasRoomFor = function() return true end,
+      getItems = function() return destinationItems end,
+      AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
+      Remove = function(_, item) if destinationItems[1] == item then destinationItems[1] = nil; return true end end,
+    }
+    local playerSquare = {}
+    local targetSquare, worldObject
+    worldObject = {
+      getContainer = function() return destination end,
+      getSquare = function() return targetSquare end,
+    }
+    destination.getParent = function() return worldObject end
+    targetSquare = {
+      getObjects = function() return { worldObject } end,
+      isBlockedTo = function(_, square) return square == playerSquare and false end,
+      isWindowTo = function(_, square) return square == playerSquare and false end,
+    }
+    local player = {
+      getInventory = function() return source end,
+      getCell = function() return { getGridSquare = function(_, x, y, z)
+        if x == 1 and y == 0 and z == 0 then return targetSquare end
+      end } end,
+      getX = function() return 0 end, getY = function() return 0 end, getZ = function() return 0 end,
+      getCurrentSquare = function() return playerSquare end,
+    }
+    Events.OnClientCommand.handler('SmartStorage', 'deposit', player, { category = 'Food', requestId = 'world-access-1' })
+    return #destinationItems, sent.summary.moved, sent.summary.noDestination, sent.summary.failed
+  `, 4, {
+    sandboxExpression: `{ FoodContainerTypes = 'crate', SearchRadius = 1 }`,
+    modules: ['selection', 'transfer', 'server'],
+    bootstrap: `
+      Events = { OnClientCommand = { Add = function(handler) Events.OnClientCommand.handler = handler end } }
+      getTimestamp = function() return 100 end
+      sendServerCommand = function(_, _, _, summary) sent = { summary = summary } end
+    `,
+  });
+  assert.deepEqual(values, [1, 1, 0, 0]);
+});
+
+test('Smart Storage fails closed for unknown square access and identifiable non-world or vehicle parents', () => {
+  const values = evaluateSmartStorage(`
+    local function attempt(kind, requestId)
+      local sourceItems, destinationItems = {}, {}
+      local source = {
+        getItems = function() return sourceItems end,
+        Remove = function(_, item) if sourceItems[1] == item then sourceItems[1] = nil; return true end end,
+        AddItem = function(_, item) sourceItems[1] = item; return item end,
+      }
+      local food = {
+        getCategory = function() return 'Food' end,
+        getCondition = function() return 100 end,
+        getConditionMax = function() return 100 end,
+        getContainer = function() return source end,
+      }
+      sourceItems[1] = food
+      local destination = {
+        getType = function() return 'crate' end,
+        getCapacity = function() return 10 end,
+        getContentsWeight = function() return #destinationItems end,
+        hasRoomFor = function() return true end,
+        getItems = function() return destinationItems end,
+        AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
+        Remove = function(_, item) if destinationItems[1] == item then destinationItems[1] = nil; return true end end,
+      }
+      local playerSquare = {}
+      local targetSquare, worldObject
+      worldObject = {
+        getContainer = function() return destination end,
+        getSquare = function() return targetSquare end,
+      }
+      if kind == 'vehicle' then worldObject.getVehicle = function() return {} end end
+      destination.getParent = function()
+        if kind == 'unknown-parent' then return {} end
+        return worldObject
+      end
+      targetSquare = { getObjects = function() return { worldObject } end }
+      local player = {
+        getInventory = function() return source end,
+        getCell = function() return { getGridSquare = function(_, x, y, z)
+          if ((kind == 'unknown-access' and x == 1) or (kind ~= 'unknown-access' and x == 0)) and y == 0 and z == 0 then
+            return targetSquare
+          end
+        end } end,
+        getX = function() return 0 end, getY = function() return 0 end, getZ = function() return 0 end,
+        getCurrentSquare = function() return kind == 'unknown-access' and playerSquare or targetSquare end,
+      }
+      Events.OnClientCommand.handler('SmartStorage', 'deposit', player, { category = 'Food', requestId = requestId })
+      return #destinationItems, #sourceItems, sent.summary.noDestination, sent.summary.failed
+    end
+    local unknownAccess = { attempt('unknown-access', 'world-deny-1') }
+    local unknownParent = { attempt('unknown-parent', 'world-deny-2') }
+    local vehicle = { attempt('vehicle', 'world-deny-3') }
+    return unknownAccess[1], unknownAccess[2], unknownAccess[3], unknownAccess[4],
+      unknownParent[1], unknownParent[2], unknownParent[3], unknownParent[4],
+      vehicle[1], vehicle[2], vehicle[3], vehicle[4]
+  `, 12, {
+    sandboxExpression: `{ FoodContainerTypes = 'crate', SearchRadius = 1 }`,
+    modules: ['selection', 'transfer', 'server'],
+    bootstrap: `
+      Events = { OnClientCommand = { Add = function(handler) Events.OnClientCommand.handler = handler end } }
+      getTimestamp = function() return 100 end
+      sendServerCommand = function(_, _, _, summary) sent = { summary = summary } end
+    `,
+  });
+  assert.deepEqual(values, [0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0]);
+});
+
 test('Smart Storage fails closed when an item leaves the server-enumerated inventory before transfer', () => {
   const values = evaluateSmartStorage(`
     local settings = SmartStorage.Settings.read()
@@ -781,7 +948,6 @@ test('Smart Storage fails closed when an item leaves the server-enumerated inven
       getType = function() return 'crate' end,
       getCapacity = function() return 10 end,
       getContentsWeight = function() return #destinationItems end,
-      isAccessible = function() return true end,
       hasRoomFor = function() return true end,
       AddItem = function(_, item) destinationItems[#destinationItems + 1] = item; return item end,
     }
@@ -794,7 +960,7 @@ test('Smart Storage fails closed when an item leaves the server-enumerated inven
     sourceItems[1] = item
     local summary = SmartStorage.Transfer.deposit({}, {
       category = 'Food', requestId = 'owned-2', settings = settings, items = { item }, owned = {},
-      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+      candidates = { makeWorldCandidate(destination, 0, 0, 0, 0, true) },
     })
     return summary.moved, summary.failed, #destinationItems
   `, 3, { modules: ['selection', 'transfer'] });
@@ -832,7 +998,6 @@ test('Smart Storage refuses no-op removals and restores an existing item after a
         getType = function() return 'crate' end,
         getCapacity = function() return 10 end,
         getContentsWeight = function() return #items end,
-        isAccessible = function() return true end,
         hasRoomFor = function() return true end,
         getItems = function() return items end,
         AddItem = add,
@@ -862,7 +1027,7 @@ test('Smart Storage refuses no-op removals and restores an existing item after a
     local noOpDestination = destination(function(self, value) self.items[#self.items + 1] = value; value.container = self; return value end)
     local noOp = SmartStorage.Transfer.deposit({}, {
       category = 'Food', settings = settings, items = { noOpItem }, owned = { [noOpSource] = true },
-      candidates = { { container = noOpDestination, x = 0, y = 0, z = 0, distance = 0 } },
+      candidates = { makeWorldCandidate(noOpDestination, 0, 0, 0, 0, true) },
     })
     local failedRemoveItems = {}
     local failedRemoveSource
@@ -875,7 +1040,7 @@ test('Smart Storage refuses no-op removals and restores an existing item after a
     local failedRemoveDestination = destination(function(self, value) self.items[#self.items + 1] = value; value.container = self; return value end)
     local failedRemove = SmartStorage.Transfer.deposit({}, {
       category = 'Food', settings = settings, items = { failedRemoveItem }, owned = { [failedRemoveSource] = true },
-      candidates = { { container = failedRemoveDestination, x = 0, y = 0, z = 0, distance = 0 } },
+      candidates = { makeWorldCandidate(failedRemoveDestination, 0, 0, 0, 0, true) },
     })
     local failedItems = {}
     local failedSource
@@ -888,7 +1053,7 @@ test('Smart Storage refuses no-op removals and restores an existing item after a
     local failedDestination = destination(function() return false end)
     local failed = SmartStorage.Transfer.deposit({}, {
       category = 'Food', settings = settings, items = { failedItem }, owned = { [failedSource] = true },
-      candidates = { { container = failedDestination, x = 0, y = 0, z = 0, distance = 0 } },
+      candidates = { makeWorldCandidate(failedDestination, 0, 0, 0, 0, true) },
     })
     return noOp.moved, noOp.failed, #noOpItems, #noOpDestination.items,
       failedRemove.moved, failedRemove.failed, #failedRemoveItems, #failedRemoveDestination.items, failedRemoveItem.container == failedRemoveSource,
@@ -914,7 +1079,6 @@ test('Smart Storage checks item-aware capacity and priority classification befor
       getType = function() return 'crate' end,
       getCapacity = function() return 100 end,
       getContentsWeight = function() return 0 end,
-      isAccessible = function() return true end,
       hasRoomFor = function(_, player, value) return value.heavy ~= true end,
       getItems = function() return destinationItems end,
       AddItem = function(_, value) destinationItems[#destinationItems + 1] = value; value.container = destination; return value end,
@@ -936,11 +1100,11 @@ test('Smart Storage checks item-aware capacity and priority classification befor
     local overlap = item(false, true)
     local heavySummary = SmartStorage.Transfer.deposit({}, {
       category = 'Food', settings = settings, items = { heavy }, owned = { [source] = true },
-      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+      candidates = { makeWorldCandidate(destination, 0, 0, 0, 0, true) },
     })
     local overlapSummary = SmartStorage.Transfer.deposit({}, {
       category = 'Food', settings = settings, items = { overlap }, owned = { [source] = true },
-      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+      candidates = { makeWorldCandidate(destination, 0, 0, 0, 0, true) },
     })
     return heavySummary.moved, heavySummary.noDestination, overlapSummary.moved, overlapSummary.failed,
       #sourceItems, #destinationItems
@@ -973,7 +1137,6 @@ test('Smart Storage treats a returned destination stack as a completed merge', (
       getType = function() return 'crate' end,
       getCapacity = function() return 10 end,
       getContentsWeight = function() return 1 end,
-      isAccessible = function() return true end,
       hasRoomFor = function() return true end,
       getItems = function() return destinationItems end,
       AddItem = function(_, value) stack.merged = value == incoming; return stack end,
@@ -986,7 +1149,7 @@ test('Smart Storage treats a returned destination stack as a completed merge', (
     }
     local summary = SmartStorage.Transfer.deposit({}, {
       category = 'Food', settings = settings, items = { incoming }, owned = { [source] = true },
-      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+      candidates = { makeWorldCandidate(destination, 0, 0, 0, 0, true) },
     })
     return summary.moved, summary.failed, #sourceItems, #destinationItems, stack.merged
   `, 5, { modules: ['selection', 'transfer'] });
@@ -1018,7 +1181,6 @@ test('Smart Storage restores after a no-op add into an unchanged non-empty desti
       getType = function() return 'crate' end,
       getCapacity = function() return 10 end,
       getContentsWeight = function() return 1 end,
-      isAccessible = function() return true end,
       hasRoomFor = function() return true end,
       getItems = function() return destinationItems end,
       AddItem = function() return false end,
@@ -1031,7 +1193,7 @@ test('Smart Storage restores after a no-op add into an unchanged non-empty desti
     }
     local summary = SmartStorage.Transfer.deposit({}, {
       category = 'Food', settings = settings, items = { item }, owned = { [source] = true },
-      candidates = { { container = destination, x = 0, y = 0, z = 0, distance = 0 } },
+      candidates = { makeWorldCandidate(destination, 0, 0, 0, 0, true) },
     })
     return summary.moved, summary.failed, #sourceItems, sourceItems[1] == item,
       #destinationItems, destinationItems[1] == existing

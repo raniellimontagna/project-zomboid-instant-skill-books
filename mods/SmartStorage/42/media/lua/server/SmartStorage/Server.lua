@@ -108,6 +108,45 @@ local function collectInventory(itemContainer, found, seen, owned)
     return true
 end
 
+local function hasVehicleReference(value)
+    if type(value) ~= "table" and type(value) ~= "userdata" then return false end
+    local vehicleOk, vehicle = call(value, "getVehicle")
+    if vehicleOk and vehicle ~= nil then return true end
+    local partOk, part = call(value, "getVehiclePart")
+    return partOk and part ~= nil
+end
+
+local function isVehicleContainer(object, container)
+    if hasVehicleReference(container) or hasVehicleReference(object) then return true end
+    local parentOk, parent = call(container, "getParent")
+    return parentOk and parent ~= nil and hasVehicleReference(parent)
+end
+
+local function isWorldContainer(object, square, container)
+    if (type(object) ~= "table" and type(object) ~= "userdata")
+        or (type(square) ~= "table" and type(square) ~= "userdata")
+        or (type(container) ~= "table" and type(container) ~= "userdata") then
+        return false
+    end
+    local containerOk, currentContainer = call(object, "getContainer")
+    if not containerOk or currentContainer ~= container then return false end
+    local parentOk, parent = call(container, "getParent")
+    if not parentOk or parent ~= object then return false end
+    local squareOk, currentSquare = call(object, "getSquare")
+    return squareOk and currentSquare == square
+end
+
+local function squaresAccessible(playerSquare, targetSquare)
+    if (type(playerSquare) ~= "table" and type(playerSquare) ~= "userdata")
+        or (type(targetSquare) ~= "table" and type(targetSquare) ~= "userdata") then
+        return false
+    end
+    if playerSquare == targetSquare then return true end
+    local blockedOk, blocked = call(targetSquare, "isBlockedTo", playerSquare)
+    local windowOk, window = call(targetSquare, "isWindowTo", playerSquare)
+    return blockedOk and windowOk and blocked == false and window == false
+end
+
 local function worldCandidates(player, settings)
     local ok, cell = call(player, "getCell")
     if not ok or cell == nil then return {} end
@@ -117,6 +156,8 @@ local function worldCandidates(player, settings)
     if not xOk or not yOk or not zOk or type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
         return {}
     end
+    local currentSquareOk, currentSquare = call(player, "getCurrentSquare")
+    if not currentSquareOk or currentSquare == nil then return {} end
     local candidates, seen = {}, {}
     local radius = math.floor(settings.SearchRadius)
     for squareX = math.floor(x) - radius, math.floor(x) + radius do
@@ -127,11 +168,17 @@ local function worldCandidates(player, settings)
                 local objects = objectsOk and collectionItems(rawObjects) or nil
                 if objects ~= nil then
                     for index = 1, #objects do
-                        local containerOk, container = call(objects[index], "getContainer")
-                        if containerOk and container ~= nil and not seen[container] then
+                        local object = objects[index]
+                        local containerOk, container = call(object, "getContainer")
+                        if containerOk and container ~= nil and not seen[container]
+                            and not isVehicleContainer(object, container)
+                            and isWorldContainer(object, square, container) then
                             seen[container] = true
                             candidates[#candidates + 1] = {
                                 container = container,
+                                object = object,
+                                square = square,
+                                accessible = squaresAccessible(currentSquare, square),
                                 x = squareX,
                                 y = squareY,
                                 z = math.floor(z),

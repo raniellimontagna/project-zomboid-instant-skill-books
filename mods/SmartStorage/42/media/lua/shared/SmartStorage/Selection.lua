@@ -35,16 +35,37 @@ local function candidateNumber(candidate, key)
     return nil
 end
 
-local function isAccessible(candidate, container, character)
-    if candidate.accessible ~= nil then
-        return candidate.accessible == true
+local function collectionContains(collection, expected)
+    if type(collection) == "table" then
+        for index = 1, #collection do
+            if collection[index] == expected then return true end
+        end
+        return false
     end
-    local ok, value = call(candidate, "isAccessible", character)
-    if ok and type(value) == "boolean" then
-        return value
+    local sizeOk, size = call(collection, "size")
+    if not sizeOk or type(size) ~= "number" or size < 0 then return false end
+    for index = 0, size - 1 do
+        local itemOk, item = call(collection, "get", index)
+        if not itemOk then return false end
+        if item == expected then return true end
     end
-    ok, value = call(container, "isAccessible", character)
-    return ok and value == true
+    return false
+end
+
+local function stillWorldCandidate(candidate, container)
+    local object, square = candidate.object, candidate.square
+    if (type(object) ~= "table" and type(object) ~= "userdata")
+        or (type(square) ~= "table" and type(square) ~= "userdata") then
+        return false
+    end
+    local objectOk, currentContainer = call(object, "getContainer")
+    if not objectOk or currentContainer ~= container then return false end
+    local parentOk, parent = call(container, "getParent")
+    if not parentOk or parent ~= object then return false end
+    local squareOk, currentSquare = call(object, "getSquare")
+    if not squareOk or currentSquare ~= square then return false end
+    local objectsOk, objects = call(square, "getObjects")
+    return objectsOk and collectionContains(objects, object)
 end
 
 local function hasCapacity(candidate, container)
@@ -91,7 +112,8 @@ local function compatible(candidate, category, settings, character)
     if type(settings.SearchRadius) ~= "number" or settings.SearchRadius < 0 or distance > settings.SearchRadius then
         return nil
     end
-    if not isAccessible(candidate, container, character) or not hasCapacity(candidate, container) then
+    if candidate.accessible ~= true or not stillWorldCandidate(candidate, container)
+        or not hasCapacity(candidate, container) then
         return nil
     end
     return { container = container, distance = distance, x = x, y = y, z = z }
