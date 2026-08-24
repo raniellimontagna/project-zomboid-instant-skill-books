@@ -875,15 +875,27 @@ test('Smart Storage adds a localized inventory action only for an eligible categ
     }
     Events.OnFillInventoryObjectContextMenu.handler(0, context, { unknown, food })
     option.callback(option.target, option.category)
+    option.callback(option.target, option.category)
     local eligibleLabel = option.label
-    local sentCategory, sentRequestId = sent.args.category, sent.args.requestId
+    local first, second = sent[1], sent[2]
+    local function exactRequestShape(args)
+      local count = 0
+      for key in pairs(args) do
+        if key ~= 'category' and key ~= 'requestId' then return false end
+        count = count + 1
+      end
+      return count == 2 and args.category ~= nil and args.requestId ~= nil
+    end
     option = nil
     Events.OnFillInventoryObjectContextMenu.handler(0, context, { unknown })
-    return eligibleLabel, sent.player == player, sent.module, sent.command,
-      sentCategory, type(sentRequestId) == 'string', #sentRequestId > 0,
-      option == nil, sent.args.itemIds == nil, sent.args.items == nil,
-      sent.args.containerId == nil
-  `, 11, {
+    return eligibleLabel, #sent == 2, first.player == player and second.player == player,
+      first.module, first.command, first.args.category, second.args.category,
+      exactRequestShape(first.args), exactRequestShape(second.args),
+      type(first.args.requestId) == 'string' and #first.args.requestId > 0,
+      type(second.args.requestId) == 'string' and #second.args.requestId > 0,
+      first.args.requestId ~= second.args.requestId, option == nil,
+      first.args.itemIds == nil, first.args.items == nil, first.args.containerId == nil
+  `, 16, {
     modules: ['clientCommands', 'contextMenu'],
     bootstrap: `
       player = {}
@@ -892,7 +904,8 @@ test('Smart Storage adds a localized inventory action only for an eligible categ
       end } }
       getPlayer = function() return player end
       sendClientCommand = function(target, module, command, args)
-        sent = { player = target, module = module, command = command, args = args }
+        sent = sent or {}
+        sent[#sent + 1] = { player = target, module = module, command = command, args = args }
       end
       getText = function(key)
         if key == 'UI_SmartStorage_DepositCompatible' then return 'Depositar itens compativeis' end
@@ -901,7 +914,8 @@ test('Smart Storage adds a localized inventory action only for an eligible categ
     `,
   });
   assert.deepEqual(values, [
-    'Depositar itens compativeis', true, 'SmartStorage', 'deposit', 'Food', true, true,
+    'Depositar itens compativeis', true, true, 'SmartStorage', 'deposit', 'Food', 'Food',
+    true, true, true, true, true,
     true, true, true, true,
   ]);
 });
@@ -969,5 +983,26 @@ test('Smart Storage safely clamps malformed results and appends an available loc
   assert.deepEqual(values, [
     'Movidos: 0 | Protegidos: 0 | Sem destino: 4 | Falhas: 0 | Aguarde antes de tentar novamente',
     'Movidos: 0 | Protegidos: 0 | Sem destino: 0 | Falhas: 0',
+  ]);
+});
+
+test('Smart Storage result formatting survives throwing localization and non-finite counts', () => {
+  const values = evaluateSmartStorage(`
+    local ok = pcall(Events.OnServerCommand.handler, 'SmartStorage', 'result', {
+      moved = 0 / 0, protected = math.huge, noDestination = -math.huge, failed = 3.9,
+    })
+    return ok, shown.text
+  `, 2, {
+    modules: ['result'],
+    bootstrap: `
+      Events = { OnServerCommand = { Add = function(handler) Events.OnServerCommand.handler = handler end } }
+      getPlayer = function() return {} end
+      HaloTextHelper = { addText = function(_, message) shown = { text = message } end }
+      getText = function() error('translation unavailable') end
+    `,
+  });
+  assert.deepEqual(values, [
+    true,
+    'Movidos: 0 | Protegidos: 0 | Sem destino: 0 | Falhas: 3',
   ]);
 });
