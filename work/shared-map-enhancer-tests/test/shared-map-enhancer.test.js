@@ -534,6 +534,7 @@ test('confirmed snapshots and create/update/remove deltas refresh attached maps 
     end
     main, mini = { added=0, removedOwned=0, removedVanilla=0, vanilla=true }, { added=0, removedOwned=0, removedVanilla=0, vanilla=true }
     mapUI, minimap = makeMap(main), makeMap(mini)
+    getPlayerMiniMap = function() return { inner=minimap } end
   ` }), [3, 3, 3, 3, 0, 0, true, true]);
 });
 
@@ -605,6 +606,7 @@ test('map UI refreshAll shares cache records while honoring independent filters'
     mainSymbols = { added={} }; miniSymbols = { added={} }
     mapUI = { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=function() return api(mainSymbols) end } end } }
     minimap = { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=function() return api(miniSymbols) end } end } }
+    getPlayerMiniMap = function() return { inner=minimap } end
     Cache = { list=function() return {
       { id='base', category='Base', title='B', icon='House', color='white', x=1, y=2 },
       { id='loot', category='Loot', title='L', icon='House', color='white', x=3, y=4 }
@@ -658,4 +660,34 @@ test('map UI default B42 form opens and submits a create intent', () => {
     formMap = { mapAPI={ uiToWorldX=function(_, x, y) return x * 10 end, uiToWorldY=function(_, x, y) return y * 10 end }, playerNum=0 }
     getSpecificPlayer = function() return { getZ=function() return 2 end } end
   ` }), [true, 'Create', true, 2, 'create', '', 120, 340, '2']);
+});
+
+test('ready map requests one initial snapshot and renders its complete confirmed cache', () => {
+  assert.deepEqual(evaluateLua(`
+    local ready = MapUI.register(); local first = sent
+    MapUI.register(); local second = sent
+    Events.OnServerCommand.handler('SharedMapEnhancer', 'snapshot', { revision=7, markers={
+      { id='persisted', category='Base', title='Camp', note='', icon='House', color='green', x=1, y=2, z=0, createdBy='p', createdAt=1, revision=7 }
+    } })
+    return ready, first.command, first.args.requestId ~= nil, first == second, Cache.revision(), Cache.get('persisted').title, rendered
+  `, 7, { modules: ['constants', 'validation', 'cache', 'mapAdapter', 'mapUI', 'clientCommands'], bootstrap: clientFixture + `
+    Events = { OnServerCommand = { Add=function(handler) Events.OnServerCommand.handler=handler end } }
+    rendered = 0
+    local api = { addTexture=function() rendered=rendered+1; return { setRGBA=function() end, setAnchor=function() end, setScale=function() end, setText=function() end } end, removeSymbol=function() end }
+    mapUI = { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=function() return api end } end } }
+  ` }), [true, 'request', true, true, 7, 'Camp', '1']);
+});
+
+test('B42 getter-shaped minimap attaches after the main map without duplicate initial requests', () => {
+  assert.deepEqual(evaluateLua(`
+    local first = MapUI.register(); local request = sent
+    outer = { inner=lateMini }
+    local second = MapUI.register()
+    return first, second, #MapUI._adapters, MapUI._adapters[2].key, request == sent
+  `, 5, { modules: ['constants', 'validation', 'cache', 'mapAdapter', 'mapUI', 'clientCommands'], bootstrap: clientFixture + `
+    local function api() return { addTexture=function() return {} end, removeSymbol=function() end } end
+    mapUI = { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=api } end } }
+    lateMini = { javaObject={ getAPIv3=function() return { getSymbolsAPIv2=api } end } }
+    getPlayerMiniMap = function(_) return outer end
+  ` }), [true, true, 2, 'minimap', true]);
 });

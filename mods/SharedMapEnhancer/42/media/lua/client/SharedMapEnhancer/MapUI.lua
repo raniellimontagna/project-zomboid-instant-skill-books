@@ -1,4 +1,4 @@
-local MapUI = { _adapters = {}, _filters = {}, _formFactory = nil }
+local MapUI = { _adapters = {}, _adapterByKey = {}, _filters = {}, _formFactory = nil, _initialSnapshotRequested = false, _readyRetries = 0 }
 
 local function candidate(value)
     if type(value) ~= "table" then return nil end
@@ -19,24 +19,43 @@ end
 
 local function addCandidate(value, key)
     local map = instanceOf(value)
+    if map == nil or MapUI._adapterByKey[key] ~= nil then return false end
     local adapter = candidate(map)
     if adapter ~= nil then
         adapter.key = key
         adapter.filters = MapUI._filters[key] or {}
         MapUI._adapters[#MapUI._adapters + 1] = adapter
+        MapUI._adapterByKey[key] = adapter
         MapUI.installContextHook(map, key)
+        return true
     end
+    return false
+end
+
+local function playerMiniMap(playerNum)
+    if type(getPlayerMiniMap) ~= "function" then return nil end
+    local ok, outer = pcall(getPlayerMiniMap, playerNum)
+    if ok and type(outer) == "table" and type(outer.inner) == "table" then return outer.inner end
+    return nil
+end
+
+function MapUI.requestInitialSnapshot()
+    if MapUI._initialSnapshotRequested then return false end
+    if type(ClientCommands) ~= "table" or type(ClientCommands.requestSnapshot) ~= "function" then return false end
+    local ok, result = pcall(ClientCommands.requestSnapshot)
+    if ok and result ~= false then MapUI._initialSnapshotRequested = true; return true end
+    return false
 end
 
 function MapUI.register()
     if type(MapAdapter) ~= "table" then return false end
-    if #MapUI._adapters > 0 then return true end
     local main = rawget(_G, "ISWorldMap_instance") or rawget(_G, "UIWorldMap") or rawget(_G, "mapUI")
-    local miniMap = rawget(_G, "MINIMAP")
-    local mini = miniMap and miniMap.inner or rawget(_G, "ISMiniMap") or rawget(_G, "MiniMap") or rawget(_G, "minimap")
+    local playerNum = type(main) == "table" and type(main.playerNum) == "number" and main.playerNum or 0
+    local mini = playerMiniMap(playerNum)
     addCandidate(main, "main")
     if mini ~= main then addCandidate(mini, "minimap") end
     if #MapUI._adapters == 0 then return false end
+    MapUI.requestInitialSnapshot()
     return true
 end
 
@@ -234,7 +253,15 @@ if Events then
         MapUI.refreshAll()
     end
     if Events.OnCreateUI and type(Events.OnCreateUI.Add) == "function" then Events.OnCreateUI.Add(hook) end
-    if Events.OnWorldMapLoad and type(Events.OnWorldMapLoad.Add) == "function" then Events.OnWorldMapLoad.Add(hook) end
+    if Events.OnCreatePlayer and type(Events.OnCreatePlayer.Add) == "function" then Events.OnCreatePlayer.Add(hook) end
+    if Events.OnTick and type(Events.OnTick.Add) == "function" then
+        Events.OnTick.Add(function()
+            if MapUI._readyRetries < 120 and (#MapUI._adapters == 0 or MapUI._adapterByKey.main == nil or MapUI._adapterByKey.minimap == nil or not MapUI._initialSnapshotRequested) then
+                MapUI._readyRetries = MapUI._readyRetries + 1
+                hook()
+            end
+        end)
+    end
 end
 
 _G.MapUI = MapUI
