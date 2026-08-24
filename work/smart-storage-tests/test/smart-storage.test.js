@@ -34,6 +34,14 @@ const portugueseSandboxPath = path.join(
   smartStorageRoot,
   '42/media/lua/shared/Translate/PTBR/Sandbox.json',
 );
+const englishUiPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/shared/Translate/EN/UI.json',
+);
+const portugueseUiPath = path.join(
+  smartStorageRoot,
+  '42/media/lua/shared/Translate/PTBR/UI.json',
+);
 const classifierPath = path.join(
   smartStorageRoot,
   '42/media/lua/shared/SmartStorage/Classifier.lua',
@@ -165,6 +173,8 @@ test('Smart Storage release documentation indexes both mods and documents every 
   assert.match(smartStorageReadme, /server-authoritative/i);
   assert.match(smartStorageReadme, /\*ItemTypes.*full item types/i);
   assert.match(smartStorageReadme, /\*ContainerTypes.*container types/i);
+  assert.match(smartStorageReadme, /four practical starter categories.*`crate`/i);
+  assert.match(smartStorageReadme, /admins can override.*add verified container types/i);
 
   const options = fs.readFileSync(sandboxOptionsPath, 'utf8');
   for (const match of options.matchAll(/option SmartStorage\.([A-Za-z]+) \{ type = \w+, default = (true|false|\d+|"[^"]*"),/g)) {
@@ -216,6 +226,8 @@ test('Smart Storage release ZIP exactly packages its Build 42 source tree', () =
     'SmartStorage/42/media/lua/client/SmartStorage/ContextMenu.lua',
     'SmartStorage/42/media/lua/client/SmartStorage/ClientCommands.lua',
     'SmartStorage/42/media/lua/client/SmartStorage/Result.lua',
+    'SmartStorage/42/media/lua/shared/Translate/EN/UI.json',
+    'SmartStorage/42/media/lua/shared/Translate/PTBR/UI.json',
   ]) {
     assert.ok(entries.includes(requiredPath), `${requiredPath} is packaged`);
   }
@@ -476,7 +488,13 @@ test('Smart Storage registers every Build 42 sandbox option with safe defaults',
       new RegExp(`option SmartStorage\\.${category} \\{ type = boolean, default = ${value},`),
     );
     assert.match(options, new RegExp(`option SmartStorage\\.${category}ItemTypes \\{ type = string, default = "",`));
-    assert.match(options, new RegExp(`option SmartStorage\\.${category}ContainerTypes \\{ type = string, default = "",`));
+    const containerDefault = ['Food', 'Tools', 'Medicine', 'Construction'].includes(category)
+      ? 'crate'
+      : '';
+    assert.match(
+      options,
+      new RegExp(`option SmartStorage\\.${category}ContainerTypes \\{ type = string, default = "${containerDefault}",`),
+    );
   }
 
   assert.match(options, /option SmartStorage\.SearchRadius \{ type = integer, default = 3,/);
@@ -489,7 +507,7 @@ test('Smart Storage registers every Build 42 sandbox option with safe defaults',
   );
 });
 
-test('Smart Storage provides English and Brazilian Portuguese sandbox labels and tooltips', () => {
+test('Smart Storage provides sandbox labels and UI labels in their proper translation files', () => {
   for (const translationPath of [englishSandboxPath, portugueseSandboxPath]) {
     assert.equal(fs.existsSync(translationPath), true, `${translationPath} exists`);
     const translations = JSON.parse(fs.readFileSync(translationPath, 'utf8'));
@@ -509,6 +527,13 @@ test('Smart Storage provides English and Brazilian Portuguese sandbox labels and
       assert.equal(typeof translations[`Sandbox_SmartStorage_${option}`], 'string');
       assert.equal(typeof translations[`Sandbox_SmartStorage_${option}_tooltip`], 'string');
     }
+    for (const key of Object.keys(translations)) {
+      assert.doesNotMatch(key, /^UI_SmartStorage_/);
+    }
+  }
+  for (const translationPath of [englishUiPath, portugueseUiPath]) {
+    assert.equal(fs.existsSync(translationPath), true, `${translationPath} exists`);
+    const translations = JSON.parse(fs.readFileSync(translationPath, 'utf8'));
     for (const key of [
       'UI_SmartStorage_DepositCompatible', 'UI_SmartStorage_Moved',
       'UI_SmartStorage_Protected', 'UI_SmartStorage_NoDestination',

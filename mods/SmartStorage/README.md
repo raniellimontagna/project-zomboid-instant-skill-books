@@ -30,7 +30,7 @@ Smart Storage has no `workshop.txt`, no Workshop manifest, or Workshop ID. Do no
 
 ## Server configuration
 
-All sandbox settings are server/world settings on the **Smart Storage** page. Their values are server-authoritative for every player in the save. The four practical starter categories are enabled by default; all optional categories start disabled.
+All sandbox settings are server/world settings on the **Smart Storage** page. Their values are server-authoritative for every player in the save. The four practical starter categories are enabled by default and use the verified vanilla `crate` container type; all optional categories start disabled with empty destination lists.
 
 | Option | Default | Effect |
 | --- | --- | --- |
@@ -52,14 +52,14 @@ All sandbox settings are server/world settings on the **Smart Storage** page. Th
 
 ### Explicit item and container type lists
 
-Every category has two independent comma-separated configuration lists. `*ItemTypes` means complete full item types (for example, `Base.Pills`); it changes which items can classify into that category. `*ContainerTypes` means container types (for example, a verified container type); it changes which nearby destinations are acceptable. They are not interchangeable, and an unknown type never matches.
+Every category has two independent comma-separated configuration lists. `*ItemTypes` means complete full item types (for example, `Base.Pills`); it changes which items can classify into that category. `*ContainerTypes` means container types (for example, a verified container type); it changes which nearby destinations are acceptable. They are not interchangeable, and an unknown type never matches. Admins can override the starter `crate` value or add verified container types for their own server; do not add unverified values.
 
 | Category | Item option | Default | Container option | Default |
 | --- | --- | --- | --- | --- |
-| Food | `SmartStorage.FoodItemTypes` | `""` | `SmartStorage.FoodContainerTypes` | `""` |
-| Tools | `SmartStorage.ToolsItemTypes` | `""` | `SmartStorage.ToolsContainerTypes` | `""` |
-| Medicine | `SmartStorage.MedicineItemTypes` | `""` | `SmartStorage.MedicineContainerTypes` | `""` |
-| Construction | `SmartStorage.ConstructionItemTypes` | `""` | `SmartStorage.ConstructionContainerTypes` | `""` |
+| Food | `SmartStorage.FoodItemTypes` | `""` | `SmartStorage.FoodContainerTypes` | `"crate"` |
+| Tools | `SmartStorage.ToolsItemTypes` | `""` | `SmartStorage.ToolsContainerTypes` | `"crate"` |
+| Medicine | `SmartStorage.MedicineItemTypes` | `""` | `SmartStorage.MedicineContainerTypes` | `"crate"` |
+| Construction | `SmartStorage.ConstructionItemTypes` | `""` | `SmartStorage.ConstructionContainerTypes` | `"crate"` |
 | Weapons | `SmartStorage.WeaponsItemTypes` | `""` | `SmartStorage.WeaponsContainerTypes` | `""` |
 | Ammo | `SmartStorage.AmmoItemTypes` | `""` | `SmartStorage.AmmoContainerTypes` | `""` |
 | Clothing | `SmartStorage.ClothingItemTypes` | `""` | `SmartStorage.ClothingContainerTypes` | `""` |

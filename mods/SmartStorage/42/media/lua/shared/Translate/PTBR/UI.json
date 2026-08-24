@@ -1,0 +1,8 @@
+{
+  "UI_SmartStorage_DepositCompatible": "Depositar itens compatíveis",
+  "UI_SmartStorage_Moved": "Movidos",
+  "UI_SmartStorage_Protected": "Protegidos",
+  "UI_SmartStorage_NoDestination": "Sem destino",
+  "UI_SmartStorage_Failed": "Falhas",
+  "UI_SmartStorage_Reason_rate_limited": "Aguarde antes de tentar novamente"
+}
