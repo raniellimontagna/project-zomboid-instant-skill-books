@@ -130,10 +130,24 @@ local function confirmedAt(x, y, z)
     return nil
 end
 
-local function defaultPayload(form, title)
-    local marker = form.marker or {}
-    return { category=form.category or marker.category or "Base", title=title or marker.title or "", note=marker.note or "",
-        icon=marker.icon or "House", color=marker.color or "white", duration="permanent" }
+local function textValue(control)
+    if type(control) ~= "table" or type(control.getInternalText) ~= "function" then return nil end
+    local ok, value = pcall(control.getInternalText, control)
+    return ok and type(value) == "string" and value or nil
+end
+
+local function selectedValue(control)
+    if type(control) ~= "table" or type(control.getSelectedData) ~= "function" then return nil end
+    local ok, value = pcall(control.getSelectedData, control)
+    return ok and type(value) == "string" and value or nil
+end
+
+local function defaultPayload(form)
+    local category, title = selectedValue(form.categoryCombo), textValue(form.titleEntry)
+    local note, icon = textValue(form.noteEntry), selectedValue(form.iconCombo)
+    local color, duration = selectedValue(form.colorCombo), selectedValue(form.durationCombo)
+    if category == nil or title == nil or note == nil or icon == nil or color == nil or duration == nil then return nil end
+    return { category=category, title=title, note=note, icon=icon, color=color, duration=duration }
 end
 
 local function translated(name)
@@ -144,30 +158,58 @@ local function translated(name)
     return name
 end
 
+local function prepareControl(control)
+    if type(control) ~= "table" or type(control.initialise) ~= "function" or type(control.instantiate) ~= "function" then return false end
+    local initialized = pcall(control.initialise, control)
+    local instantiated = pcall(control.instantiate, control)
+    return initialized and instantiated
+end
+
+local function newTextEntry(value, x, y, width, height)
+    local ok, entry = pcall(ISTextEntryBox.new, ISTextEntryBox, value, x, y, width, height)
+    if not ok or not prepareControl(entry) or type(entry.getInternalText) ~= "function" then return nil end
+    return entry
+end
+
+local function newSelector(values, selected, x, y, width, height)
+    local ok, combo = pcall(ISComboBox.new, ISComboBox, x, y, width, height)
+    if not ok or not prepareControl(combo) or type(combo.addOptionWithData) ~= "function" or type(combo.setSelectedData) ~= "function" or type(combo.getSelectedData) ~= "function" then return nil end
+    for _, value in ipairs(values) do
+        if not pcall(combo.addOptionWithData, combo, value, value) then return nil end
+    end
+    if not pcall(combo.setSelectedData, combo, selected) then return nil end
+    return combo
+end
+
 local function defaultForm(form)
-    -- These are B42 controls.  The injectable factory remains a narrow seam for
-    -- tests and future richer category/icon/color form implementations.
-    if type(ISPanel) ~= "table" or type(ISPanel.new) ~= "function" or type(ISTextEntryBox) ~= "table" or type(ISTextEntryBox.new) ~= "function" or type(ISButton) ~= "table" or type(ISButton.new) ~= "function" then return false end
-    local title = form.marker and form.marker.title or ""
-    local ok, panel = pcall(ISPanel.new, ISPanel, 0, 0, 300, 100)
-    if not ok or panel == nil or type(panel.addChild) ~= "function" then return false end
-    local entry = ISTextEntryBox:new(title, 10, 10, 280, 25)
-    local button = ISButton:new(100, 55, 100, 25, translated("Create"), form, function(target, clicked)
+    if type(ISPanel) ~= "table" or type(ISPanel.new) ~= "function" or type(ISTextEntryBox) ~= "table" or type(ISTextEntryBox.new) ~= "function" or type(ISComboBox) ~= "table" or type(ISComboBox.new) ~= "function" or type(ISButton) ~= "table" or type(ISButton.new) ~= "function" or type(Constants) ~= "table" or type(Constants.categories) ~= "table" or type(Constants.icons) ~= "table" or type(Constants.colors) ~= "table" or type(Constants.durations) ~= "table" then return false end
+    local marker = form.marker or {}
+    local ok, panel = pcall(ISPanel.new, ISPanel, 0, 0, 360, 275)
+    if not ok or panel == nil or type(panel.addChild) ~= "function" or type(panel.addToUIManager) ~= "function" or type(panel.initialise) ~= "function" then return false end
+    if not pcall(panel.initialise, panel) then return false end
+    local titleEntry = newTextEntry(marker.title or "", 10, 10, 340, 25)
+    local noteEntry = newTextEntry(marker.note or "", 10, 45, 340, 25)
+    local categoryCombo = newSelector(Constants.categories, form.category or marker.category or "Base", 10, 80, 165, 25)
+    local iconCombo = newSelector(Constants.icons, marker.icon or "House", 185, 80, 165, 25)
+    local colorCombo = newSelector(Constants.colors, marker.color or "white", 10, 115, 165, 25)
+    local durationCombo = newSelector(Constants.durations, marker.duration or "permanent", 185, 115, 165, 25)
+    if titleEntry == nil or noteEntry == nil or categoryCombo == nil or iconCombo == nil or colorCombo == nil or durationCombo == nil then return false end
+    local buttonTitle = translated(form.mode == "edit" and "Edit" or "Create")
+    local buttonOk, button = pcall(ISButton.new, ISButton, 130, 165, 100, 25, buttonTitle, form, function(target, clicked)
         if clicked and clicked.internal == "OK" then
-            local text = target.entry and type(target.entry.getInternalText) == "function" and target.entry:getInternalText() or title
-            target.submit(defaultPayload(target, text))
+            local payload = defaultPayload(target)
+            if payload == nil then return end
+            target.submit(payload)
             if target.panel and type(target.panel.removeFromUIManager) == "function" then pcall(target.panel.removeFromUIManager, target.panel) end
         end
     end)
+    if not buttonOk or not prepareControl(button) then return false end
     button.internal = "OK"
-    for _, control in ipairs({ panel, entry, button }) do
-        if type(control.initialise) == "function" then pcall(control.initialise, control) end
-        if control ~= panel and type(control.instantiate) == "function" then pcall(control.instantiate, control) end
-    end
-    panel:addChild(entry); panel:addChild(button)
-    form.panel, form.entry = panel, entry
-    if type(panel.addToUIManager) == "function" then pcall(panel.addToUIManager, panel) else return false end
-    return true
+    for _, control in ipairs({ titleEntry, noteEntry, categoryCombo, iconCombo, colorCombo, durationCombo, button }) do panel:addChild(control) end
+    form.panel, form.titleEntry, form.noteEntry = panel, titleEntry, noteEntry
+    form.categoryCombo, form.iconCombo, form.colorCombo, form.durationCombo = categoryCombo, iconCombo, colorCombo, durationCombo
+    local managed, result = pcall(panel.addToUIManager, panel)
+    return managed and result ~= false
 end
 
 local function openForm(form)

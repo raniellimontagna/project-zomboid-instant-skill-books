@@ -641,25 +641,56 @@ test('map UI context flow converts coordinates, sends only confirmed-cache inten
   ` }), [3, 'create', 120, 340, 2, true, 'update', 'confirmed', 'remove', 'confirmed', true]);
 });
 
-test('map UI default B42 form opens and submits a create intent', () => {
+test('map UI default B42 form submits selected complete create and edit intents', () => {
   assert.deepEqual(evaluateLua(`
-    local opened = MapUI.openCreate(formMap, 'main', 12, 34)
-    createdButton.callback(createdButton.target, createdButton)
-    return opened, createdButton.title, createdPanel.managed, #createdPanel.children, sent.command, sent.args.title, sent.args.x, sent.args.y, sent.args.z
-  `, 9, { modules: ['constants', 'validation', 'cache', 'clientCommands', 'mapAdapter', 'mapUI'], bootstrap: clientFixture + `
-    createdPanel, createdButton = nil, nil
+    local created = MapUI.openCreate(formMap, 'main', 12, 34)
+    local completeCreate = #createdEntries == 2 and #createdCombos == 4 and #createdButtons == 1
+    if completeCreate then
+      createdEntries[1].value, createdEntries[2].value = 'Supply Cache', 'north gate'
+      createdCombos[1]:setSelectedData('Danger'); createdCombos[2]:setSelectedData('Tent')
+      createdCombos[3]:setSelectedData('cyan'); createdCombos[4]:setSelectedData('24h')
+      createdButtons[1].callback(createdButtons[1].target, createdButtons[1])
+    end
+    local create = sent
+    local marker = { id='confirmed', category='Base', title='Old', note='old note', icon='House', color='green', x=120, y=340, z=2, createdBy='p', createdAt=1, revision=1 }
+    Cache.reset({ revision=1, markers={ marker } })
+    local edited = MapUI.openEdit(marker, 'main')
+    local completeEdit = #createdEntries == 4 and #createdCombos == 8 and #createdButtons == 2
+    local editDefaults = completeEdit and createdEntries[3].value == 'Old' and createdEntries[4].value == 'old note' and createdCombos[5]:getSelectedData() == 'Base' and createdCombos[6]:getSelectedData() == 'House' and createdCombos[7]:getSelectedData() == 'green' and createdCombos[8]:getSelectedData() == 'permanent'
+    if completeEdit then
+      createdEntries[3].value, createdEntries[4].value = 'Revised', 'new note'
+      createdCombos[5]:setSelectedData('Medicine'); createdCombos[6]:setSelectedData('MedCross')
+      createdCombos[7]:setSelectedData('purple'); createdCombos[8]:setSelectedData('7d')
+      createdButtons[2].callback(createdButtons[2].target, createdButtons[2])
+    end
+    local update = sent
+    local createFields = { create and create.command or '', create and create.args.category or '', create and create.args.title or '', create and create.args.note or '', create and create.args.icon or '', create and create.args.color or '', create and create.args.duration or '', create and create.args.x or '', create and create.args.y or '', create and create.args.z or '' }
+    local updateFields = { update and update.command or '', update and update.args.id or '', update and update.args.category or '', update and update.args.title or '', update and update.args.note or '', update and update.args.icon or '', update and update.args.color or '', update and update.args.duration or '' }
+    return created, completeCreate and #createdCombos[1].options == 7 and #createdCombos[2].options == 11 and #createdCombos[3].options == 8 and #createdCombos[4].options == 5, table.concat(createFields, '|'), edited, completeEdit and editDefaults, table.concat(updateFields, '|')
+  `, 6, { modules: ['constants', 'validation', 'cache', 'clientCommands', 'mapAdapter', 'mapUI'], bootstrap: clientFixture + `
+    createdPanels, createdEntries, createdCombos, createdButtons = {}, {}, {}, {}
     ISPanel = { new=function(_, x, y, width, height)
-      createdPanel = { children={}, initialise=function() end, addToUIManager=function(self) self.managed=true end, addChild=function(self, child) table.insert(self.children, child) end }
-      return createdPanel
+      local panel = { children={}, initialise=function() end, addToUIManager=function(self) self.managed=true end, addChild=function(self, child) table.insert(self.children, child) end }
+      table.insert(createdPanels, panel); return panel
     end }
-    ISTextEntryBox = { new=function(_, title) return { initialise=function() end, instantiate=function() end, getInternalText=function() return title end } end }
+    ISTextEntryBox = { new=function(_, title)
+      local entry = { value=title, initialise=function() end, instantiate=function() end, getInternalText=function(self) return self.value end }
+      table.insert(createdEntries, entry); return entry
+    end }
+    ISComboBox = { new=function(_, x, y, width, height)
+      local combo = { options={}, selected=nil, initialise=function() end, instantiate=function() end }
+      function combo:addOptionWithData(text, data) table.insert(self.options, { text=text, data=data }); if self.selected == nil then self.selected=data end end
+      function combo:setSelectedData(data) self.selected=data end
+      function combo:getSelectedData() return self.selected end
+      table.insert(createdCombos, combo); return combo
+    end }
     ISButton = { new=function(_, x, y, width, height, title, target, callback)
-      createdButton = { title=title, target=target, callback=callback, initialise=function() end, instantiate=function() end }
-      return createdButton
+      local button = { title=title, target=target, callback=callback, initialise=function() end, instantiate=function() end }
+      table.insert(createdButtons, button); return button
     end }
     formMap = { mapAPI={ uiToWorldX=function(_, x, y) return x * 10 end, uiToWorldY=function(_, x, y) return y * 10 end }, playerNum=0 }
     getSpecificPlayer = function() return { getZ=function() return 2 end } end
-  ` }), [true, 'Create', true, 2, 'create', '', 120, 340, '2']);
+  ` }), [true, true, 'create|Danger|Supply Cache|north gate|Tent|cyan|24h|120|340|2', true, true, 'update|confirmed|Medicine|Revised|new note|MedCross|purple|7d']);
 });
 
 test('ready map requests one initial snapshot and renders its complete confirmed cache', () => {
