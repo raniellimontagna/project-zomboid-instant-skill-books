@@ -1,4 +1,5 @@
 local MapAdapter = {}
+local unpackCompat = (table and table.unpack) or unpack
 
 local COLORS = {
     white = { 1, 1, 1, 1 }, red = { 1, 0, 0, 1 }, orange = { 1, 0.5, 0, 1 },
@@ -9,9 +10,9 @@ local COLORS = {
 local function call(object, method, ...)
     if object == nil or type(object[method]) ~= "function" then return false, nil end
     local args = { ... }
-    local ok, result = pcall(function() return object[method](object, table.unpack(args)) end)
+    local ok, result = pcall(function() return object[method](object, unpackCompat(args)) end)
     if ok then return true, result end
-    local directOk, directResult = pcall(object[method], table.unpack(args))
+    local directOk, directResult = pcall(object[method], unpackCompat(args))
     return directOk, directResult
 end
 
@@ -34,7 +35,7 @@ end
 local function safeMethod(symbol, method, ...)
     if symbol == nil or type(symbol[method]) ~= "function" then return end
     local args = { ... }
-    pcall(function() symbol[method](symbol, table.unpack(args)) end)
+    pcall(function() symbol[method](symbol, unpackCompat(args)) end)
 end
 
 function MapAdapter.attach(mapUI)

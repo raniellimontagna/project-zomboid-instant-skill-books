@@ -410,6 +410,12 @@ test('map adapter fails closed without map and symbols APIs', () => {
   assert.deepEqual(evaluateLua('local a = MapAdapter.attach({}); return a == nil', 1, { modules: ['mapAdapter'] }), [true]);
 });
 
+test('map adapter supports Lua 5.1 global unpack for discovery and styling', () => {
+  assert.deepEqual(evaluateLua(`local a = MapAdapter.attach(mapUI); local ok = MapAdapter.rebuild(a, { { id='lua51', category='Base', title='Camp', icon='House', color='red', x=11, y=22 } }, {}); local s = symbols.added[2]; return ok, s.x, s.y, s.rgba[1], s.rgba[2] == 0`, 5, { modules: ['mapAdapter'], bootstrap: mapFixture + `
+    local unpackCompat = table.unpack; table.unpack = nil; unpack = unpackCompat
+  ` }), [true, 11, 22, 1, true]);
+});
+
 test('map adapter draws filtered confirmed markers with mapped style and fallback icon', () => {
   assert.deepEqual(evaluateLua(`local a = MapAdapter.attach(mapUI); local ok = MapAdapter.rebuild(a, ${mapMarkers}, { Loot = false }); local first, second; for i = 2, #symbols.added do if symbols.added[i].x == 10 then first = symbols.added[i] else second = symbols.added[i] end end; return ok, #symbols.added, first.icon, first.x, first.y, first.rgba[1], first.rgba[2], first.rgba[3], second.icon`, 9, { modules: ['mapAdapter'], bootstrap: mapFixture }), [true, 3, 'House', 10, 20, 1, 0, 0, 'Question']);
 });
