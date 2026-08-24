@@ -29,11 +29,13 @@ local itemTagNames = {
         "PRY_BAR", "BLOW_TORCH",
     },
     Construction = {
-        "HAMMER", "SAW", "SCREWDRIVER", "WRENCH", "CROWBAR", "PIPE_WRENCH",
-        "PRY_BAR", "BLOW_TORCH",
+        "HAMMER", "SAW", "PLASTER_BUCKET", "WALLPAPER_PASTE", "PAINTBRUSH",
+        "HOLD_DIRT", "TAKE_DIRT", "SLEDGEHAMMER", "CLUB_HAMMER", "STONE_MAUL",
+        "PICK_AXE", "CHOP_TREE", "DIG_PLOW", "DIG_GRAVE", "REMOVE_STUMP",
+        "CUT_PLANT", "IS_CUTTING",
     },
     Ammo = { "AMMO" },
-    Fuel = { "FUEL", "FUEL_CONTAINER" },
+    Fuel = { "PETROL", "IS_FIRE_FUEL", "IS_FIRE_FUEL_SINGLE_USE" },
     Farming = { "IS_SEED", "FERTILIZER", "COMPOST" },
     Fishing = { "FISHING_ROD", "FISHING_LINE", "FISHING_HOOK" },
 }

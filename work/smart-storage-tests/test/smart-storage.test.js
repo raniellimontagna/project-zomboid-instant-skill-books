@@ -496,6 +496,42 @@ test('Smart Storage passes B42 ItemTag tokens to hasTag', () => {
   assert.deepEqual(values, ['Ammo']);
 });
 
+test('Smart Storage uses official fuel and construction ItemTag signals', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    settings.Fuel, settings.Tools, settings.Construction = true, false, true
+    local fuel = {
+      hasTag = function(_, tag)
+        if tag ~= ItemTag.PETROL and tag ~= ItemTag.IS_FIRE_FUEL
+            and tag ~= ItemTag.IS_FIRE_FUEL_SINGLE_USE then
+          error('classifier passed an invented fuel ItemTag')
+        end
+        return tag == ItemTag.IS_FIRE_FUEL
+      end,
+    }
+    local construction = {
+      hasTag = function(_, tag) return assertItemTag(tag, ItemTag.PLASTER_BUCKET) end,
+    }
+    return SmartStorage.Classifier.classify(fuel, settings),
+      SmartStorage.Classifier.classify(construction, settings)
+  `, 2);
+  assert.deepEqual(values, ['Fuel', 'Construction']);
+});
+
+test('Smart Storage keeps the default Tools-before-Construction priority for shared build tools', () => {
+  const values = evaluateSmartStorage(`
+    local settings = SmartStorage.Settings.read()
+    local hammer = {
+      hasTag = function(_, tag) return assertItemTag(tag, ItemTag.HAMMER) end,
+    }
+    return settings.CategoryPriority[2], settings.CategoryPriority[4],
+      SmartStorage.Classifier.matches(hammer, 'Tools', settings),
+      SmartStorage.Classifier.matches(hammer, 'Construction', settings),
+      SmartStorage.Classifier.classify(hammer, settings)
+  `, 5);
+  assert.deepEqual(values, ['Tools', 'Construction', true, true, 'Tools']);
+});
+
 test('Smart Storage registers every Build 42 sandbox option with safe defaults', () => {
   assert.equal(fs.existsSync(sandboxOptionsPath), true, 'sandbox-options.txt exists');
   const options = fs.readFileSync(sandboxOptionsPath, 'utf8');
